@@ -1,0 +1,42 @@
+# INCAR for Si64 (63-atom, 1-vacancy) single-point evaluations.
+#
+# yamatsumi drives every atom position itself between VASP calls -- this
+# file MUST keep VASP as a single-point evaluator (NSW=0, IBRION=-1); the
+# package checks this at startup and refuses to run otherwise
+# (see README.md in the repository root, "check_vasp_relaxation_disabled").
+NSW    = 0
+IBRION = -1
+
+# --- Electronic structure -------------------------------------------
+# ENCUT: UNVERIFIED against your actual POTCAR -- check the ENMAX value
+# printed in your Si POTCAR's header (PSCTR section) and prefer
+# ~1.3 x ENMAX, or run an ENCUT convergence test. The standard VASP PBE
+# "Si" PAW potential has ENMAX = 245.345 eV; 400 eV (used here) gives a
+# generous ~1.6x margin and is a commonly used value in the Si
+# point-defect literature, but this has NOT been checked against your
+# specific POTCAR/functional and should be treated as a starting point,
+# not a validated setting.
+ENCUT  = 400
+PREC   = Accurate
+EDIFF  = 1E-6
+LREAL  = Auto
+
+# ISMEAR=0 (Gaussian smearing): Si is a semiconductor with a finite gap,
+# so a metallic smearing scheme (ISMEAR>0) is inappropriate; Gaussian
+# smearing with a small SIGMA is the standard safe choice for an
+# insulator/semiconductor, especially with the coarse k-mesh in
+# KPOINTS (the tetrahedron method, ISMEAR=-5, needs a denser mesh to be
+# reliable).
+ISMEAR = 0
+SIGMA  = 0.05
+
+# Neutral vacancy, closed-shell assumption for this test setup. The Si
+# vacancy's ground state and its charge-state-dependent spin are a real,
+# separately studied topic (Watkins-model EPR literature) beyond the scope
+# of this quick test; set ISPIN=2 with an explicit MAGMOM guess if you are
+# specifically investigating a spin-polarised ground state.
+ISPIN  = 1
+
+# --- I/O: keep each of the many per-iteration, per-image directories small
+LWAVE  = .FALSE.
+LCHARG = .FALSE.

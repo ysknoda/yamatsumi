@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yamatsumi"
+version = "1.0.0a1"
+description = "CI-NEB (Climbing Image Nudged Elastic Band) transition-state search driven by VASP"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Yusuke Noda" }]
+keywords = ["vasp", "dft", "neb", "transition-state", "computational-chemistry", "materials-science"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+dependencies = [
+    "numpy>=1.22",
+]
+
+[project.optional-dependencies]
+mpi  = ["mpi4py>=3.1"]
+jit  = ["numba>=0.56"]
+plot = ["matplotlib>=3.5", "scipy>=1.8"]
+test = ["pytest>=7.0"]
+all  = ["yamatsumi[mpi,jit,plot,test]"]
+
+[project.scripts]
+yamatsumi = "yamatsumi.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ysknoda/yamatsumi"
+Repository = "https://github.com/ysknoda/yamatsumi"
+
+[tool.setuptools.packages.find]
+include = ["yamatsumi", "yamatsumi.*"]

@@ -1,0 +1,44 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# yamatsumi run artifacts
+NEB_run/
+convergence_history*.csv
+yamatsumi_result.txt
+TS_POSCAR
+energy_profile.*
+vasp_run.log
+
+# AI-assisted-development tooling (process artifacts, not the package)
+.claude/
+.code-check/
+.github_release/
+.pip_preparation/
+
+# Real VASP output fixture (large, kept local-only by decision)
+tests/fixtures/real_vasp/
