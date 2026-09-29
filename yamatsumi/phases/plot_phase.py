@@ -40,12 +40,14 @@ def phase_plot(args) -> None:
 
     phonon = dict(
         frequencies=[], n_imaginary=0, is_transition_state=False,
-        phonon_calculation_failed=False,
+        phonon_calculation_failed=False, verification_skipped=False,
     )
     result_file = work_dir / "yamatsumi_result.txt"
     if result_file.exists():
         with open(result_file) as fh:
             for line in fh:
+                if "phonon verification: SKIPPED" in line:
+                    phonon["verification_skipped"] = True
                 if "Phonon calculation failed" in line:
                     phonon["phonon_calculation_failed"] = (
                         line.split(":")[-1].strip().lower() == "true"

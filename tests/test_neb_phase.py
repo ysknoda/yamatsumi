@@ -400,3 +400,33 @@ def test_phase_neb_refuses_a_single_digit_work_dir_from_1_0_0a1(tmp_path):
         (tmp_path / "NEB_run" / str(i)).mkdir(parents=True)
     with pytest.raises(NEBError, match="single-digit"):
         phase_neb(args)
+
+
+def test_finalize_skip_ts_verification_runs_no_phonons_and_says_so(tmp_path):
+    """
+    --skip-ts-verification must not launch the phonon run, and the result
+    must say the TS was not checked -- not "0 imaginary modes, not a TS".
+    """
+    images     = [_dummy_poscar(), _dummy_poscar(), _dummy_poscar()]
+    energies   = [-10.0, -9.5, -10.2]
+    image_dirs = [tmp_path / n for n in ("00", "01", "02")]
+    args = _make_finalize_args(tmp_path, dry_run=False, skip_ts_verification=True)
+
+    with patch("yamatsumi.phases.neb_phase.plot_energy_profile") as plot, \
+         patch("yamatsumi.phases.neb_phase.verify_transition_state") as verify:
+        finalize(images, energies, 1, image_dirs, tmp_path / "CopyDir", args)
+
+    verify.assert_not_called()
+    text = (tmp_path / "yamatsumi_result.txt").read_text()
+    assert "SKIPPED" in text
+    assert "TS criterion satisfied" not in text
+    assert plot.call_args.kwargs["phonon"]["verification_skipped"] is True
+
+
+def test_finalize_dry_run_is_reported_as_unverified(tmp_path):
+    images     = [_dummy_poscar(), _dummy_poscar(), _dummy_poscar()]
+    image_dirs = [tmp_path / n for n in ("00", "01", "02")]
+    with patch("yamatsumi.phases.neb_phase.plot_energy_profile"):
+        finalize(images, [-10.0, -9.5, -10.2], 1, image_dirs, tmp_path / "CopyDir",
+                 _make_finalize_args(tmp_path))
+    assert "SKIPPED" in (tmp_path / "yamatsumi_result.txt").read_text()

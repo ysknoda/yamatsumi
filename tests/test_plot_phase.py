@@ -75,3 +75,13 @@ def test_phase_plot_malformed_imaginary_count_logs_warning_not_silent(tmp_path, 
          caplog.at_level(logging.WARNING):
         phase_plot(_make_args(tmp_path))
     assert "Unparseable" in caplog.text
+
+
+def test_phase_plot_keeps_a_skipped_verification_as_skipped(tmp_path):
+    _stage_images(tmp_path)
+    (tmp_path / "yamatsumi_result.txt").write_text(
+        "Transition-state phonon verification: SKIPPED (--skip-ts-verification)\n"
+    )
+    with patch("yamatsumi.phases.plot_phase.plot_energy_profile") as plot:
+        phase_plot(_make_args(tmp_path))
+    assert plot.call_args.kwargs["phonon"]["verification_skipped"] is True

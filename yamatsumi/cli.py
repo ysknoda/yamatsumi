@@ -269,6 +269,16 @@ Notes
         ),
     )
 
+    ts_g.add_argument(
+        "--skip-ts-verification", action="store_true",
+        help=(
+            "Do not run the finite-difference phonon check (IBRION = 5) after "
+            "convergence. It costs 6N single points for N free atoms -- 378 "
+            "for a 63-atom cell -- so skip it when that is unaffordable; the "
+            "result then reports the TS as not checked."
+        ),
+    )
+
     rate_g = p.add_argument_group(
         "Reaction-rate estimate (optional)",
         description=(

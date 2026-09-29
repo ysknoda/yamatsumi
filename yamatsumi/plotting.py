@@ -153,10 +153,13 @@ def plot_energy_profile(
 
     ts_ok    = phonon.get("is_transition_state", False)
     n_imag   = phonon.get("n_imaginary", "N/A")
-    ts_check = (
-        "TS verified (1 imaginary freq.)"
-        if ts_ok else f"TS not verified ({n_imag} imaginary freq.)"
-    )
+    if phonon.get("verification_skipped", False):
+        ts_check = "TS not checked (phonon verification skipped)"
+    else:
+        ts_check = (
+            "TS verified (1 imaginary freq.)"
+            if ts_ok else f"TS not verified ({n_imag} imaginary freq.)"
+        )
     info_text = "\n".join([
         f"CI image : {ci_index} ({image_dirs[ci_index].name})",
         f"Ea (fwd) : {barrier_fwd:.4f} eV",

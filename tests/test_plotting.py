@@ -105,3 +105,24 @@ def test_plot_skips_gracefully_without_matplotlib(tmp_path):
             no_show=True,
         )
     assert not (tmp_path / "out.png").exists()
+
+
+def test_skipped_verification_is_labelled_as_not_checked(tmp_path, monkeypatch):
+    """A skipped phonon check must not be drawn as 'TS not verified (0 imaginary)'."""
+    pytest.importorskip("matplotlib")
+    from yamatsumi import plotting
+    texts = []
+    import matplotlib.axes
+    orig = matplotlib.axes.Axes.text
+    monkeypatch.setattr(matplotlib.axes.Axes, "text",
+                        lambda self, *a, **k: (texts.append(a[2] if len(a) > 2 else ""), orig(self, *a, **k))[1])
+    dirs = [tmp_path / n for n in ("00", "01", "02")]
+    plotting.plot_energy_profile(
+        image_dirs=dirs, energies=[-10.0, -9.5, -10.2], ci_index=1,
+        phonon=dict(frequencies=[], n_imaginary=0, is_transition_state=False,
+                    verification_skipped=True),
+        barrier_fwd=0.5, barrier_rev=0.7, output_path=tmp_path / "p.png", fmt="png", no_show=True,
+    )
+    joined = "\n".join(str(t) for t in texts)
+    assert "skipped" in joined.lower()
+    assert "0 imaginary" not in joined

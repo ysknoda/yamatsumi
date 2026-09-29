@@ -300,10 +300,17 @@ def finalize(
             f"(T={args.temperature:.1f} K, nu={args.attempt_freq:.2e} Hz)"
         )
 
-    if args.dry_run:
+    skip_reason = (
+        "dry run" if args.dry_run
+        else "--skip-ts-verification" if args.skip_ts_verification
+        else None
+    )
+    if skip_reason is not None:
+        _rlog(True, f"  Phonon TS verification skipped ({skip_reason}).")
         phonon = dict(
             frequencies=[], n_imaginary=0, n_zero_modes=0, is_transition_state=False,
             phonon_calculation_failed=False, eigenvector_tangent_alignment=None,
+            verification_skipped=True,
         )
     else:
         phonon = verify_transition_state(
@@ -328,26 +335,29 @@ def finalize(
         fh.write("\nEnergy profile along reaction path:\n")
         for idir, e in zip(image_dirs, energies):
             fh.write(f"  {idir.name}  E = {e:.6f} eV  dE = {e - e0:+.6f} eV\n")
-        fh.write("\nTransition-state phonon verification (IBRION=5):\n")
-        fh.write(f"  Phonon calculation failed   : {phonon['phonon_calculation_failed']}\n")
-        fh.write(f"  Imaginary frequencies found : {phonon['n_imaginary']}\n")
-        fh.write(
-            f"  Zero modes (|nu| <= {args.zero_mode_tol:g} meV): "
-            f"{phonon.get('n_zero_modes', 0)}\n"
-        )
-        fh.write(f"  TS criterion satisfied      : {phonon['is_transition_state']}\n")
-        alignment = phonon.get("eigenvector_tangent_alignment")
-        if alignment is not None:
+        if phonon.get("verification_skipped", False):
+            fh.write(f"\nTransition-state phonon verification: SKIPPED ({skip_reason})\n")
+        else:
+            fh.write("\nTransition-state phonon verification (IBRION=5):\n")
+            fh.write(f"  Phonon calculation failed   : {phonon['phonon_calculation_failed']}\n")
+            fh.write(f"  Imaginary frequencies found : {phonon['n_imaginary']}\n")
             fh.write(
-                f"  Eigenvector-tangent alignment: {alignment:.4f}  "
-                "(1.0 = imaginary mode exactly along the NEB reaction coordinate)\n"
+                f"  Zero modes (|nu| <= {args.zero_mode_tol:g} meV): "
+                f"{phonon.get('n_zero_modes', 0)}\n"
             )
-        if phonon["frequencies"]:
-            fh.write("  All frequencies (meV):\n")
-            for k, freq in enumerate(phonon["frequencies"]):
-                tag = (" [imaginary]" if freq < -args.zero_mode_tol
-                       else " [zero mode]" if abs(freq) <= args.zero_mode_tol else "")
-                fh.write(f"    {k + 1:4d}  {freq:10.4f} meV{tag}\n")
+            fh.write(f"  TS criterion satisfied      : {phonon['is_transition_state']}\n")
+            alignment = phonon.get("eigenvector_tangent_alignment")
+            if alignment is not None:
+                fh.write(
+                    f"  Eigenvector-tangent alignment: {alignment:.4f}  "
+                    "(1.0 = imaginary mode exactly along the NEB reaction coordinate)\n"
+                )
+            if phonon["frequencies"]:
+                fh.write("  All frequencies (meV):\n")
+                for k, freq in enumerate(phonon["frequencies"]):
+                    tag = (" [imaginary]" if freq < -args.zero_mode_tol
+                           else " [zero mode]" if abs(freq) <= args.zero_mode_tol else "")
+                    fh.write(f"    {k + 1:4d}  {freq:10.4f} meV{tag}\n")
 
     logger.info(f"  Result summary written: {result_path}")
 
