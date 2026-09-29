@@ -130,6 +130,26 @@ def parse_forces_from_outcar(
 _EIGENVECTOR_HEADER = "Eigenvectors and eigenvalues of the dynamical matrix"
 
 
+def _parse_mode_header(line: str) -> Optional[Tuple[int, float]]:
+    """
+    (mode index, frequency in meV with imaginary modes negative) for a VASP
+    mode-header line such as
+    '   2 f/i=    1.234567 THz    7.756 2PiTHz   41.234 cm-1     5.112 meV',
+    else None. Requiring the 'THz' unit keeps other integer-led rows that can
+    follow the phonon block (band eigenvalues: '  1  -6.1584  2.00000') out.
+    """
+    parts = line.split()
+    if len(parts) < 3 or not parts[0].isdigit() or "THz" not in line:
+        return None
+    for token in (parts[-1], parts[-2]):
+        try:
+            freq_mev = float(token)
+        except ValueError:
+            continue
+        return int(parts[0]), (-freq_mev if "f/i" in parts[1] else freq_mev)
+    return None
+
+
 def parse_frequencies_from_outcar(outcar_path: Path) -> List[float]:
     """
     Parse vibrational frequencies from OUTCAR (IBRION=5/6).
@@ -168,25 +188,15 @@ def parse_frequencies_from_outcar(outcar_path: Path) -> List[float]:
         return frequencies
 
     for line in lines[anchor + 1:]:
-        s = line.strip()
-        if not s:
+        header = _parse_mode_header(line)
+        if header is None:
             continue
-        parts = s.split()
-        if len(parts) < 3 or not parts[0].isdigit():
-            continue
-        is_imag = "f/i" in parts[1]
-        freq_mev = None
-        for token in (parts[-1], parts[-2] if len(parts) >= 2 else None):
-            if token is None:
-                continue
-            try:
-                freq_mev = float(token)
-                break
-            except ValueError:
-                continue
-        if freq_mev is None:
-            continue
-        frequencies.append(-freq_mev if is_imag else freq_mev)
+        index, freq_mev = header
+        # Modes are numbered 1, 2, 3, ...; a restart or a gap means this
+        # line belongs to a later section (e.g. a second eigenvector block).
+        if index != len(frequencies) + 1:
+            break
+        frequencies.append(freq_mev)
     return frequencies
 
 
@@ -228,25 +238,16 @@ def parse_eigenvectors_from_outcar(
         return modes
 
     i = anchor + 1
+    n_headers = 0
     while i < len(lines):
-        parts = lines[i].strip().split()
-        if len(parts) < 3 or not parts[0].isdigit():
+        header = _parse_mode_header(lines[i])
+        if header is None:
             i += 1
             continue
-
-        is_imag = "f/i" in parts[1]
-        freq_mev = None
-        for token in (parts[-1], parts[-2] if len(parts) >= 2 else None):
-            if token is None:
-                continue
-            try:
-                freq_mev = float(token)
-                break
-            except ValueError:
-                continue
-        if freq_mev is None:
-            i += 1
-            continue
+        index, freq_mev = header
+        if index != n_headers + 1:  # same end-of-list rule as the frequency parser
+            break
+        n_headers += 1
 
         data_start = i + 2  # skip this header line and the "X Y Z dx dy dz" label line
         rows: List[List[float]] = []
@@ -262,7 +263,7 @@ def parse_eigenvectors_from_outcar(
                 break
 
         if len(rows) == n_atoms:
-            modes.append((-freq_mev if is_imag else freq_mev, np.array(rows, dtype=float)))
+            modes.append((freq_mev, np.array(rows, dtype=float)))
             i = data_start + n_atoms
         else:
             i += 1

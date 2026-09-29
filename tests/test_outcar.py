@@ -8,6 +8,8 @@ reproduce for the integration tests to be meaningful.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -328,3 +330,40 @@ def test_energy_ignores_trailing_electronic_step_lines(tmp_path):
     p = tmp_path / "OUTCAR"
     p.write_text("".join([*_converged_step(-45.97327637), _elec(-46.85957269)]))
     assert parse_energy_from_outcar(p) == pytest.approx(-45.97327637)
+
+
+# ---------------------------------------------------------------------------
+# The phonon parsers must stop at the end of the mode list
+# ---------------------------------------------------------------------------
+
+_REAL_PHONON_EXCERPT = (
+    Path(__file__).parent / "fixtures" / "real_vasp_excerpts"
+    / "si8_bulk_ibrion6_vasp643_phonon.OUTCAR"
+)
+# Verbatim band-eigenvalue rows from the same real OUTCAR: an integer, then
+# two floats, which the old filters accepted as mode headers.
+_BAND_ROWS = (
+    "  band No.  band energies     occupation \n"
+    "      1      -6.1584      2.00000\n"
+    "      2       5.9416      2.00000\n"
+)
+
+
+def test_frequencies_ignore_band_rows_after_the_phonon_block(tmp_path):
+    p = tmp_path / "OUTCAR"
+    p.write_text(_REAL_PHONON_EXCERPT.read_text() + _BAND_ROWS)
+    assert len(parse_frequencies_from_outcar(p)) == 24
+
+
+def test_frequencies_stop_when_a_second_mode_list_starts(tmp_path):
+    """
+    A second eigenvector block (e.g. 'Eigenvectors after division by
+    SQRT(mass)') restarts the mode numbering at 1 and must not be appended.
+    """
+    block = _REAL_PHONON_EXCERPT.read_text()
+    second = block.replace("Eigenvectors and eigenvalues of the dynamical matrix",
+                           "Eigenvectors after division by SQRT(mass)")
+    p = tmp_path / "OUTCAR"
+    p.write_text(block + second)
+    assert len(parse_frequencies_from_outcar(p)) == 24
+    assert len(parse_eigenvectors_from_outcar(p, 8)) == 24
