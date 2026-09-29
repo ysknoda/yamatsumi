@@ -324,3 +324,64 @@ def test_phase_neb_resume_within_max_iter_proceeds(tmp_path):
 
     with pytest.raises(NEBError, match="Cannot read energy/forces"):
         phase_neb(args)
+
+
+# ---------------------------------------------------------------------------
+# MPI: no rank may rewrite its image files while another rank is still
+# reading this iteration's OUTCARs/POSCARs
+# ---------------------------------------------------------------------------
+
+class _RecordingComm:
+    """Fake 2-rank communicator that records collective calls into `events`."""
+
+    def __init__(self, events, rank=0, size=2):
+        self._events, self._rank, self._size = events, rank, size
+
+    def Get_rank(self):
+        return self._rank
+
+    def Get_size(self):
+        return self._size
+
+    def Barrier(self):
+        self._events.append("barrier")
+
+    def allreduce(self, value, op=None):
+        return value
+
+
+def test_update_and_run_waits_for_every_rank_before_touching_files(tmp_path, monkeypatch):
+    """
+    Regression test for an MPI race. Every rank reads *all* image OUTCARs and
+    POSCARs at the start of an iteration, then rewrites the files of its own
+    images (prepare_image_directory deletes the old OUTCAR first). Without a
+    barrier in between, a fast rank deleted an OUTCAR a slower rank was still
+    reading: NEBError "Cannot read energy/forces", or, if the file was caught
+    half-written, a silently wrong energy that made MPI and serial runs
+    diverge.
+    """
+    from yamatsumi.phases import neb_phase
+
+    events: list[str] = []
+    n_inter = 3
+    poscars = [_dummy_poscar() for _ in range(n_inter)]
+    monkeypatch.setattr(neb_phase, "update_all_images", lambda **kw: [p.copy() for p in poscars])
+    monkeypatch.setattr(neb_phase, "prepare_image_directory", lambda *a, **k: events.append("prepare"))
+    monkeypatch.setattr(neb_phase, "write_poscar", lambda *a, **k: events.append("write"))
+    monkeypatch.setattr(neb_phase, "run_vasp_for_images", lambda *a, **k: events.append("vasp"))
+
+    image_dirs = [tmp_path / f"{i:02d}" for i in range(n_inter + 2)]
+    neb_phase._update_and_run(
+        images=[_dummy_poscar()] * (n_inter + 2), neb_forces=[None] * n_inter,
+        tangents=[None] * n_inter, ci_index=2, opt_states=[None] * n_inter,
+        image_dirs=image_dirs, copy_dir=tmp_path, iteration=1, n_inter=n_inter,
+        optimizer="fire", step_size=0.05, vasp_cmd="unused",
+        comm=_RecordingComm(events), local_workers=1, sanitize_mpi_env=False,
+        vasp_timeout=None, root=True,
+    )
+
+    assert "prepare" in events, "rank 0 of 2 owns at least one image"
+    first_touch = min(events.index(e) for e in ("prepare", "write") if e in events)
+    assert "barrier" in events[:first_touch], (
+        f"image files were touched before all ranks synchronised: {events}"
+    )

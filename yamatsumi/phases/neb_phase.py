@@ -225,6 +225,15 @@ def _update_and_run(
             f"CI={'yes' if img_idx == ci_index else 'no'}"
         )
 
+    # Every rank has just read *all* images' OUTCARs (and, under MPI, all
+    # POSCARs) for this iteration. The writes below start with
+    # prepare_image_directory(), which deletes the old OUTCAR, so without
+    # this barrier a fast rank deletes or half-rewrites a file a slower rank
+    # is still reading: either NEBError "Cannot read energy/forces" or,
+    # worse, a silently wrong energy that makes ranks -- and MPI vs serial
+    # runs -- diverge.
+    parallel.barrier(comm)
+
     # Each rank writes POSCARs only for the images it will also run VASP
     # for below (same distribute_indices call in both places), avoiding a
     # concurrent-write race on the same file from multiple ranks.

@@ -46,6 +46,15 @@ def is_parallel(comm) -> bool:
     return comm is not None and get_size(comm) > 1
 
 
+def barrier(comm) -> None:
+    """
+    Block until every rank reaches this call. A no-op unless actually running
+    with more than one rank, so serial and single-rank runs are unaffected.
+    """
+    if is_parallel(comm):
+        comm.Barrier()
+
+
 def distribute_indices(n_items: int, rank: int, size: int) -> List[int]:
     """
     Split range(n_items) into `size` contiguous, non-overlapping blocks and
