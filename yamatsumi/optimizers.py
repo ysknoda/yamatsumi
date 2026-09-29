@@ -1,6 +1,11 @@
 """
 Geometry-optimiser suite: steepest-descent, Quick-Min, and FIRE.
 
+Semantics follow the VTST Tools optimizers (ADR 0002), with unit mass:
+steepest descent moves ``sd_alpha * F`` (VTST SDALPHA), Quick-Min integrates
+``v += F*dt; dx = v*dt`` with a fixed ``quickmin_dt`` (VTST TIMESTEP), and
+``step_size`` caps every optimiser's per-atom displacement (VTST MAXMOVE).
+
 FIRE hyper-parameters live in `OptimizerState` (not in CLI args), so
 `step_fire` needs no reference to the argument namespace.
 
@@ -21,6 +26,7 @@ from typing import List, Optional
 
 import numpy as np
 
+from .constants import DEFAULT_QUICKMIN_DT, DEFAULT_SD_ALPHA
 from .constraints import apply_mask, build_mask
 from .errors import NEBError
 from .geometry import cartesian_to_direct, direct_to_cartesian
@@ -34,8 +40,10 @@ class OptimizerState:
 
     Attributes
     ----------
-    velocity : (N, 3) Cartesian velocity [Ang/step]
-    dt       : current time step
+    velocity : (N, 3) Cartesian velocity (unit mass)
+    dt       : current FIRE time step
+    sd_alpha    : steepest-descent step per unit force [Ang^2/eV]
+    quickmin_dt : fixed Quick-Min time step
     alpha    : FIRE mixing parameter
     n_pos    : consecutive steps with P >= 0
     """
@@ -50,6 +58,8 @@ class OptimizerState:
         f_dec    : float = 0.5,
         alpha0   : float = 0.1,
         f_alpha  : float = 0.99,
+        sd_alpha    : float = DEFAULT_SD_ALPHA,
+        quickmin_dt : float = DEFAULT_QUICKMIN_DT,
     ):
         self.n_atoms = n_atoms
         self._dt0    = dt0
@@ -59,6 +69,8 @@ class OptimizerState:
         self.f_dec   = f_dec
         self._alpha0 = alpha0
         self.f_alpha = f_alpha
+        self.sd_alpha    = sd_alpha
+        self.quickmin_dt = quickmin_dt
         self.velocity = np.zeros((n_atoms, 3), dtype=float)
         self.dt       = dt0
         self.alpha    = alpha0
@@ -91,6 +103,8 @@ def make_optimizer_states(n_images: int, n_atoms: int, args) -> List[OptimizerSt
             f_dec   = args.fire_f_dec,
             alpha0  = args.fire_alpha0,
             f_alpha = args.fire_f_alpha,
+            sd_alpha    = args.sd_alpha,
+            quickmin_dt = args.quickmin_dt,
         )
         for _ in range(n_images)
     ]
@@ -114,27 +128,44 @@ def _max_atom_norm(v_flat: np.ndarray, n_atoms: int) -> float:
     return max_v
 
 
+@njit(cache=True)
+def _cap_displacement(dx_flat: np.ndarray, step_size: float, n_atoms: int):
+    """Scale *dx_flat* so no atom moves more than *step_size*. Returns the
+    (possibly scaled) displacement and the factor applied (1.0 if none)."""
+    d_max = _max_atom_norm(dx_flat, n_atoms)
+    if d_max > step_size:
+        factor = step_size / d_max
+        return dx_flat * factor, factor
+    return dx_flat, 1.0
+
+
 # ---------------------------------------------------------------------------
 # Steepest-descent
 # ---------------------------------------------------------------------------
 
 @njit(cache=True)
-def _sd_kernel(cart_flat: np.ndarray, forces_flat: np.ndarray, step_size: float, max_f: float) -> np.ndarray:
-    return cart_flat + (step_size / max_f) * forces_flat
+def _sd_kernel(cart_flat: np.ndarray, forces_flat: np.ndarray, alpha: float,
+               step_size: float, n_atoms: int) -> np.ndarray:
+    dx, _ = _cap_displacement(forces_flat * alpha, step_size, n_atoms)
+    return cart_flat + dx
 
 
-def step_sd(poscar: Poscar, forces: np.ndarray, step_size: float) -> Poscar:
-    """Steepest-descent step with maximum-displacement cap."""
+def step_sd(poscar: Poscar, forces: np.ndarray, step_size: float,
+            alpha: float = DEFAULT_SD_ALPHA) -> Poscar:
+    """
+    Steepest-descent step: move ``alpha * F`` [alpha in Ang^2/eV], with no
+    atom moving more than *step_size* [Ang]. The step shrinks with the force,
+    so the path can settle instead of limit-cycling at a fixed step length.
+    """
     n = poscar.n_atoms
     mask = build_mask(poscar.selective_dynamics, (n, 3))
     forces = apply_mask(np.asarray(forces, dtype=float), mask)
-    max_f = _max_atom_norm(forces.ravel(), n)
-    if max_f < 1e-10:
+    if _max_atom_norm(forces.ravel(), n) < 1e-10:
         return poscar
 
     lat  = poscar.lattice
     cart = direct_to_cartesian(poscar.positions, lat).ravel()
-    new_cart_flat = _sd_kernel(cart, forces.ravel(), step_size, max_f)
+    new_cart_flat = _sd_kernel(cart, forces.ravel(), alpha, step_size, n)
 
     return poscar.with_positions(cartesian_to_direct(new_cart_flat.reshape(n, 3), lat))
 
@@ -148,11 +179,20 @@ def _quickmin_kernel(
     cart_flat:     np.ndarray,
     forces_flat:   np.ndarray,
     velocity_flat: np.ndarray,
+    dt:            float,
     step_size:     float,
-    max_f:         float,
     n_atoms:       int,
 ):
-    """Returns (new_cart_flat, new_velocity_flat)."""
+    """
+    One Quick-Min step (unit mass). Returns (new_cart_flat, new_velocity_flat).
+
+    The velocity keeps only its component along the current force, and only
+    while it points downhill; then ``v += F*dt`` and the atoms move ``v*dt``.
+    Under a steady force the step therefore grows each iteration -- the whole
+    point of Quick-Min over steepest descent. If the step exceeds
+    *step_size*, the step and the stored velocity are scaled together so the
+    velocity stays consistent with the move actually made.
+    """
     P = np.sum(velocity_flat * forces_flat)
     F_norm2 = np.sum(forces_flat * forces_flat)
     if P > 0.0 and F_norm2 > 1e-20:
@@ -160,32 +200,9 @@ def _quickmin_kernel(
     else:
         v = np.zeros_like(forces_flat)
 
-    # dt is not a physical timestep here: it is the same max-force-normalising
-    # scale factor _sd_kernel uses (step_size / max_f), chosen so that
-    # forces_flat * dt has max per-atom norm exactly step_size. Bug fix: v
-    # (built from this dt-scaled force plus the velocity projection, then
-    # explicitly capped at step_size below) IS therefore already the intended
-    # per-step Cartesian displacement -- it must be added to cart_flat
-    # directly. Multiplying it by dt a second time (the previous behaviour)
-    # applied the unbounded step_size/max_f factor twice: harmless when
-    # max_f happens to be O(step_size), but as max_f -> 0 (the near-converged
-    # regime, exactly where the smallest, most careful steps are needed) dt
-    # diverges and the position update exploded to a displacement far beyond
-    # the step_size cap (e.g. max_f=1e-4 eV/Ang, step_size=0.05 Ang gave a 25
-    # Ang single-step displacement -- 500x the intended cap). FIRE's velocity
-    # (step_fire, below) legitimately multiplies by dt twice because FIRE's
-    # own dt is a separately bounded (dt_max) adaptive timestep, not this
-    # unbounded max_f-normalising factor -- that pattern is correct and is
-    # not touched here.
-    dt = step_size / max_f
     v = v + forces_flat * dt
-
-    v_max = _max_atom_norm(v, n_atoms)
-    if v_max > step_size:
-        v = v * (step_size / v_max)
-
-    new_cart_flat = cart_flat + v
-    return new_cart_flat, v
+    dx, factor = _cap_displacement(v * dt, step_size, n_atoms)
+    return cart_flat + dx, v * factor
 
 
 def step_quickmin(
@@ -194,19 +211,20 @@ def step_quickmin(
     state     : OptimizerState,
     step_size : float,
 ) -> Poscar:
-    """Velocity-projection (Quick-Min) step."""
+    """Velocity-projection (Quick-Min) step with time step ``state.quickmin_dt``."""
     n = poscar.n_atoms
     mask = build_mask(poscar.selective_dynamics, (n, 3))
     forces = apply_mask(np.asarray(forces, dtype=float), mask)
-    max_f = _max_atom_norm(forces.ravel(), n)
-    if max_f < 1e-10:
+    if _max_atom_norm(forces.ravel(), n) < 1e-10:
         return poscar
 
     lat = poscar.lattice
     cart = direct_to_cartesian(poscar.positions, lat).ravel()
     velocity = apply_mask(np.asarray(state.velocity, dtype=float), mask).ravel()
 
-    new_cart_flat, v_flat = _quickmin_kernel(cart, forces.ravel(), velocity, step_size, max_f, n)
+    new_cart_flat, v_flat = _quickmin_kernel(
+        cart, forces.ravel(), velocity, state.quickmin_dt, step_size, n,
+    )
     v_flat = apply_mask(v_flat.reshape(n, 3), mask).ravel()
 
     state.velocity = v_flat.reshape(n, 3)
@@ -331,8 +349,13 @@ def step_fire(
             step_size, n,
         )
 
-    new_cart_flat = cart_flat + v_flat * new_dt
+    # Mask BEFORE moving: the climbing-image kernel works with the unmasked
+    # NEB tangent, so its velocity can be nonzero on frozen components.
     v_flat = apply_mask(v_flat.reshape(n, 3), mask).ravel()
+    # The kernels cap the velocity at step_size, which bounds the move only
+    # while dt <= 1; cap the move itself as well (ADR 0002).
+    dx_flat, _ = _cap_displacement(v_flat * new_dt, step_size, n)
+    new_cart_flat = cart_flat + dx_flat
 
     state.dt       = new_dt
     state.alpha    = new_alpha
@@ -365,7 +388,7 @@ def update_all_images(
         is_ci   = (img_idx == ci_index)
 
         if opt == "sd":
-            new_p = step_sd(poscar, fmat, step_size)
+            new_p = step_sd(poscar, fmat, step_size, alpha=state.sd_alpha)
         elif opt == "quickmin":
             new_p = step_quickmin(poscar, fmat, state, step_size)
         elif opt == "fire":

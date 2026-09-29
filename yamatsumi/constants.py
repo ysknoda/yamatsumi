@@ -12,7 +12,10 @@ DEFAULT_FORCE_TOL     = 0.05        # eV/Ang
 DEFAULT_SPRING_CONST  = 5.0         # eV/Ang
 DEFAULT_STEP_SIZE     = 0.05        # Ang
 DEFAULT_CI_START_ITER = 1
-DEFAULT_OPTIMIZER     = "sd"
+DEFAULT_OPTIMIZER     = "fire"        # ADR 0002
+# VTST Tools optimizer defaults (henkelmangroup.github.io/vtsttools/optimizers.html):
+DEFAULT_SD_ALPHA      = 0.01        # Ang^2/eV, VTST SDALPHA: SD moves alpha*F
+DEFAULT_QUICKMIN_DT   = 0.1         # VTST TIMESTEP for Quick-Min (unit mass)
 DEFAULT_FIRE_DT0      = 0.1
 DEFAULT_FIRE_DT_MAX   = 1.0
 DEFAULT_FIRE_N_MIN    = 5

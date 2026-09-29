@@ -28,7 +28,9 @@ from .constants import (
     DEFAULT_PATH_INTERPOLATION,
     DEFAULT_PLOT_FMT,
     DEFAULT_PLOT_OUT,
+    DEFAULT_QUICKMIN_DT,
     DEFAULT_RATE_ESTIMATE,
+    DEFAULT_SD_ALPHA,
     DEFAULT_SPRING_CONST,
     DEFAULT_STEP_SIZE,
     DEFAULT_TEMPERATURE_K,
@@ -154,7 +156,10 @@ Notes
     )
     neb.add_argument(
         "--step-size", type=float, default=DEFAULT_STEP_SIZE, metavar="DX",
-        help=f"Max Cartesian displacement per step [Ang]  (default: {DEFAULT_STEP_SIZE})",
+        help=(
+            "Largest per-atom Cartesian displacement in one step, for every "
+            f"optimiser (VTST MAXMOVE) [Ang]  (default: {DEFAULT_STEP_SIZE})"
+        ),
     )
     neb.add_argument(
         "--max-iter", type=int, default=DEFAULT_MAX_ITER, metavar="N",
@@ -171,9 +176,21 @@ Notes
         "--optimizer", default=DEFAULT_OPTIMIZER, metavar="ALG",
         choices=["sd", "quickmin", "fire"],
         help=(
-            "Optimiser: sd (robust/slow) | quickmin (~2-4x faster) | "
-            f"fire (~3-6x faster)  (default: {DEFAULT_OPTIMIZER})"
+            "Optimiser: fire | quickmin | sd, with VTST Tools semantics. "
+            "fire is the only one validated on an asymmetric test surface; "
+            f"see docs/adr/0002  (default: {DEFAULT_OPTIMIZER})"
         ),
+    )
+    p.add_argument(
+        "--sd-alpha", type=float, default=DEFAULT_SD_ALPHA, metavar="A",
+        help=(
+            "Steepest descent moves A*F before the --step-size cap "
+            f"(VTST SDALPHA) [Ang^2/eV]  (default: {DEFAULT_SD_ALPHA})"
+        ),
+    )
+    p.add_argument(
+        "--quickmin-dt", type=float, default=DEFAULT_QUICKMIN_DT, metavar="DT",
+        help=f"Quick-Min time step, unit mass (VTST TIMESTEP)  (default: {DEFAULT_QUICKMIN_DT})",
     )
 
     fire = p.add_argument_group(
@@ -357,7 +374,9 @@ def validate_args(args) -> None:
                       ("--log-interval", args.log_interval),
                       ("--local-workers", args.local_workers)]
     positive_float = [("--step-size", args.step_size),
-                      ("--force-tol", args.force_tol)]
+                      ("--force-tol", args.force_tol),
+                      ("--sd-alpha", args.sd_alpha),
+                      ("--quickmin-dt", args.quickmin_dt)]
 
     for flag, value in positive_int:
         if value < 1:

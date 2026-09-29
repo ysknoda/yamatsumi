@@ -125,6 +125,9 @@ def test_validate_args_accepts_defaults():
         ["--local-workers", "0"],
         # A negative tolerance would count every mode as imaginary.
         ["--zero-mode-tol", "-1"],
+        # 0 never moves an image; negative moves uphill.
+        ["--sd-alpha", "0"],
+        ["--quickmin-dt", "-0.1"],
     ],
 )
 def test_validate_args_rejects_meaningless_numeric_values(argv):
