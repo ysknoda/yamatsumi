@@ -182,3 +182,28 @@ def test_get_image_dirs_is_two_digit_for_every_small_count():
 def test_get_image_dirs_widens_beyond_99():
     from pathlib import Path
     assert get_image_dirs(Path("/w"), 99)[-1].name == "100"
+
+
+def test_prepare_image_directory_restages_a_read_only_potcar(tmp_path):
+    """
+    Regression found by the first real-VASP run: 342 of the 343 POTCARs in a
+    PAW library as distributed are read-only (mode 444), and copying one
+    into CopyDir keeps that mode. shutil.copy2 then propagated it into every
+    image directory, so re-staging on the first NEB iteration failed with
+    PermissionError, after the old OUTCAR had already been deleted.
+    """
+    import os
+    import stat
+
+    copy_dir = tmp_path / "CopyDir"
+    copy_dir.mkdir()
+    (copy_dir / "INCAR").write_text("NSW = 0\n")
+    potcar = copy_dir / "POTCAR"
+    potcar.write_text("PAW_PBE Si 05Jan2001\n")
+    os.chmod(potcar, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+
+    image_dir = tmp_path / "01"
+    prepare_image_directory(image_dir, copy_dir)   # Phase 1
+    prepare_image_directory(image_dir, copy_dir)   # first NEB iteration
+    assert (image_dir / "POTCAR").read_text() == "PAW_PBE Si 05Jan2001\n"
+    assert os.access(image_dir / "POTCAR", os.W_OK)

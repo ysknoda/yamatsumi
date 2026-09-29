@@ -46,7 +46,15 @@ def prepare_image_directory(image_dir: Path, copy_dir: Path) -> None:
             if src.name.upper() == "POSCAR":
                 logger.debug(f"  Skipped POSCAR in CopyDir: {src}")
                 continue
-            shutil.copy2(src, image_dir / src.name)
+            # Copy contents only, never the permission bits: PAW libraries
+            # ship POTCARs read-only, and a read-only copy here could not be
+            # replaced on the next re-staging (PermissionError on the first
+            # NEB iteration). Remove any previous copy first for the same
+            # reason, e.g. one left read-only by an older version.
+            dst = image_dir / src.name
+            if dst.exists() or dst.is_symlink():
+                dst.unlink()
+            shutil.copyfile(src, dst)
             logger.debug(f"  Copied {src.name} -> {image_dir.name}/")
 
 
