@@ -120,3 +120,52 @@ def test_relaxation_check_last_occurrence_wins(tmp_path):
     """A later re-assignment of the same tag overrides an earlier one."""
     (tmp_path / "INCAR").write_text("NSW = 50\nNSW = 0\nIBRION = -1\n")
     check_vasp_relaxation_disabled(tmp_path)  # must not raise (final NSW=0)
+
+
+# ---------------------------------------------------------------------------
+# The relaxation guard must fail closed
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("incar", [
+    "IBRION = 2; NSW = 100\n",           # VASP accepts ';'-separated tags
+    "NSW = 100; IBRION = 2\n",
+    "ENCUT = 400 ; NSW = 5 # comment\n",
+    "ISMEAR = 0; SIGMA = 0.05\nIBRION = 1\n",
+])
+def test_relaxation_check_sees_semicolon_separated_tags(tmp_path, incar):
+    """Regression: a ';'-separated relaxation setting used to pass the guard."""
+    (tmp_path / "INCAR").write_text(incar)
+    with pytest.raises(NEBError):
+        check_vasp_relaxation_disabled(tmp_path)
+
+
+def test_relaxation_check_accepts_semicolon_separated_single_point(tmp_path):
+    (tmp_path / "INCAR").write_text("ISMEAR = 0 ; SIGMA = 0.05\nNSW = 0; IBRION = -1\n")
+    check_vasp_relaxation_disabled(tmp_path)  # must not raise
+
+
+@pytest.mark.parametrize("incar,tag", [
+    ("NSW = 100 200\n", "NSW"),
+    ("IBRION = 2x\n", "IBRION"),
+    ("NSW = .TRUE.\n", "NSW"),
+])
+def test_relaxation_check_rejects_unparseable_values(tmp_path, incar, tag):
+    """
+    Regression: a value the parser could not read was treated as the safe
+    default (NSW=0 / IBRION=-1), so the guard failed open.
+    """
+    (tmp_path / "INCAR").write_text(incar)
+    with pytest.raises(NEBError, match=tag):
+        check_vasp_relaxation_disabled(tmp_path)
+
+
+def test_prepare_image_directory_requires_incar_in_copy_dir(tmp_path):
+    """
+    VASP 6.6.1 stops with 'No INCAR or vaspin.h5 found' (exit code 1), which
+    only surfaced as a generic per-image failure. Report it at staging time.
+    """
+    copy_dir = tmp_path / "CopyDir"
+    copy_dir.mkdir()
+    (copy_dir / "KPOINTS").write_text("Gamma\n")
+    with pytest.raises(NEBError, match="INCAR"):
+        prepare_image_directory(tmp_path / "00", copy_dir)

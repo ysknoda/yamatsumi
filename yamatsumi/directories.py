@@ -33,6 +33,14 @@ def prepare_image_directory(image_dir: Path, copy_dir: Path) -> None:
             f"Template directory not found: {copy_dir}\n"
             "Populate it with INCAR, KPOINTS, POTCAR, etc."
         )
+    if not (copy_dir / "INCAR").is_file():
+        # VASP itself refuses to start without one ("No INCAR or vaspin.h5
+        # found", exit code 1, checked on 6.6.1), but only after every image
+        # has been staged and only as a generic per-image failure.
+        raise NEBError(
+            f"{copy_dir} has no INCAR. Every image copies its VASP inputs from "
+            "this directory; add the single-point INCAR (NSW = 0, IBRION = -1)."
+        )
     for src in copy_dir.iterdir():
         if src.is_file():
             if src.name.upper() == "POSCAR":
@@ -43,17 +51,41 @@ def prepare_image_directory(image_dir: Path, copy_dir: Path) -> None:
 
 
 def _parse_incar_tag(lines: List[str], tag: str) -> Optional[str]:
-    """Return the value string of the last INCAR line assigning *tag* (case
-    insensitive, "!"/"#" inline comments stripped), or None if absent."""
+    """Return the value string of the last assignment to *tag* (case
+    insensitive, "!"/"#" inline comments stripped), or None if absent.
+
+    VASP accepts several ';'-separated assignments on one line
+    ("IBRION = 2; NSW = 100"), so each line is split on ';' first; reading
+    only the first '=' of a line used to hide the later tags entirely."""
     value = None
     for raw in lines:
-        stripped = raw.split("!")[0].split("#")[0].strip()
-        if not stripped or "=" not in stripped:
-            continue
-        key, _, val = stripped.partition("=")
-        if key.strip().upper() == tag:
-            value = val.strip()
+        stripped = raw.split("!")[0].split("#")[0]
+        for fragment in stripped.split(";"):
+            fragment = fragment.strip()
+            if not fragment or "=" not in fragment:
+                continue
+            key, _, val = fragment.partition("=")
+            if key.strip().upper() == tag:
+                value = val.strip()
     return value
+
+
+def _parse_int_tag(incar_path: Path, lines: List[str], tag: str, default: int) -> int:
+    """Integer value of *tag*, *default* if absent. An unreadable value raises
+    NEBError: this is a safety check, so it must fail closed rather than fall
+    back to the harmless-looking default."""
+    raw = _parse_incar_tag(lines, tag)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        raise NEBError(
+            f"{incar_path}: cannot read {tag} = {raw!r} as an integer, so "
+            "yamatsumi cannot confirm VASP is a single-point evaluator. Fix the "
+            "value (NSW = 0, IBRION = -1), or pass --allow-vasp-relaxation if "
+            "the setup is intentional."
+        ) from None
 
 
 def check_vasp_relaxation_disabled(copy_dir: Path, allow_override: bool = False) -> None:
@@ -77,20 +109,12 @@ def check_vasp_relaxation_disabled(copy_dir: Path, allow_override: bool = False)
         return
     incar_path = copy_dir / "INCAR"
     if not incar_path.exists():
-        return  # missing CopyDir/INCAR is reported by prepare_image_directory instead
+        return  # a missing CopyDir/INCAR is reported by prepare_image_directory
     with open(incar_path) as fh:
         lines = fh.readlines()
 
-    nsw_str    = _parse_incar_tag(lines, "NSW")
-    ibrion_str = _parse_incar_tag(lines, "IBRION")
-    try:
-        nsw = int(float(nsw_str)) if nsw_str is not None else 0
-    except ValueError:
-        nsw = 0
-    try:
-        ibrion = int(float(ibrion_str)) if ibrion_str is not None else -1
-    except ValueError:
-        ibrion = -1
+    nsw    = _parse_int_tag(incar_path, lines, "NSW", default=0)
+    ibrion = _parse_int_tag(incar_path, lines, "IBRION", default=-1)
 
     if nsw != 0 or ibrion != -1:
         raise NEBError(
