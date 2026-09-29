@@ -60,12 +60,12 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from yamatsumi.directories import get_image_dirs
-from yamatsumi.geometry import direct_to_cartesian, mic_displacement
+from yamatsumi.geometry import cartesian_to_direct, direct_to_cartesian, mic_displacement
 from yamatsumi.outcar import (
     parse_energy_from_outcar,
     scf_convergence_problem,
 )
-from yamatsumi.poscar import read_poscar
+from yamatsumi.poscar import read_poscar, write_poscar
 
 NUM_IMAGES = 4  # even, so no image starts on the symmetric saddle
 N_ATOMS = 7
@@ -161,35 +161,87 @@ def prepare(work: Path) -> None:
     log("prepare: ideal Si7 endpoints written")
 
 
-def relax(work: Path, vasp_cmd: str, potcar: Path) -> None:
-    for label in ("init", "final"):
-        out = work / f"POSCAR_{label}"
-        if out.exists():
-            log(f"relax: {out.name} already present, skipping")
-            continue
-        run_dir = work / f"relax_{label}"
+def _migrating_atom(ideal_init, ideal_final) -> tuple[int, np.ndarray]:
+    """Index of the one atom that moves, and its Cartesian hop vector."""
+    hop = direct_to_cartesian(mic_displacement(ideal_init.positions, ideal_final.positions),
+                              ideal_init.lattice)
+    k = int(np.argmax(np.linalg.norm(hop, axis=1)))
+    return k, hop[k]
+
+
+def kicked_init(ideal_init, ideal_final, kick_ang: float):
+    """
+    The ideal initial structure with the migrating atom pushed *kick_ang*
+    along the hop, towards the vacancy.
+
+    The perfectly symmetric (T_d) vacancy is only a shallow metastable state
+    in this cell: relaxed from the ideal positions it stays put, although a
+    C3v-symmetric state 0.488 eV lower lies a few meV of barrier away (found
+    on 2026-09-29 when the first NEB's end images fell into it). The kick
+    keeps the C3v symmetry about the hop axis and lets the relaxation reach
+    that minimum.
+    """
+    k, hop = _migrating_atom(ideal_init, ideal_final)
+    cart = direct_to_cartesian(ideal_init.positions, ideal_init.lattice)
+    cart[k] += kick_ang * hop / np.linalg.norm(hop)
+    return ideal_init.with_positions(cartesian_to_direct(cart, ideal_init.lattice))
+
+
+def inverted_final(ideal_init, ideal_final, relaxed_init):
+    """
+    The final endpoint as the image of *relaxed_init* under inversion through
+    the midpoint of the hopping bond, a symmetry of the diamond lattice that
+    swaps the two sites. Atom i of the result is the inverted copy of the
+    atom j that occupies the inverse of i's final site, so the atom order
+    yamatsumi matches endpoints by is kept. By construction the endpoints are
+    exactly degenerate, and the final endpoint needs no separate relaxation.
+    """
+    lat = ideal_init.lattice
+    k, _ = _migrating_atom(ideal_init, ideal_final)
+    centre = ideal_init.positions[k] + 0.5 * mic_displacement(
+        ideal_init.positions[k], ideal_final.positions[k])
+    delta = mic_displacement(ideal_init.positions, relaxed_init.positions)  # relaxation, per atom
+    positions = np.empty_like(relaxed_init.positions)
+    used = set()
+    for i in range(len(positions)):
+        target = 2.0 * centre - ideal_final.positions[i]
+        gaps = np.linalg.norm(direct_to_cartesian(
+            mic_displacement(ideal_init.positions, target), lat), axis=1)
+        j = int(np.argmin(gaps))
+        if gaps[j] > 1e-6 or j in used:
+            raise SystemExit(f"inversion does not map the lattice onto itself (atom {i + 1})")
+        used.add(j)
+        positions[i] = ideal_final.positions[i] - delta[j]
+    return relaxed_init.with_positions(positions)
+
+
+def relax(work: Path, vasp_cmd: str, potcar: Path, kick_ang: float) -> None:
+    ideal_init = read_poscar(str(work / "ideal" / "POSCAR_init"))
+    ideal_final = read_poscar(str(work / "ideal" / "POSCAR_final"))
+    out_init, out_final = work / "POSCAR_init", work / "POSCAR_final"
+    if out_init.exists():
+        log("relax: POSCAR_init already present, skipping")
+    else:
+        run_dir = work / "relax_init"
         stage_inputs(run_dir, INCAR_RELAX, potcar)
-        shutil.copy(work / "ideal" / f"POSCAR_{label}", run_dir / "POSCAR")
-        log(f"relax: relaxing the {label} endpoint")
+        write_poscar(str(run_dir / "POSCAR"), kicked_init(ideal_init, ideal_final, kick_ang))
+        log(f"relax: relaxing the initial endpoint (migrating atom kicked {kick_ang} Ang)")
         with open(run_dir / "vasp_run.log", "w") as fh:
-            rc = subprocess.run(
-                shlex.split(vasp_cmd), cwd=run_dir, stdout=fh, stderr=subprocess.STDOUT
-            ).returncode
+            rc = subprocess.run(shlex.split(vasp_cmd), cwd=run_dir, stdout=fh,
+                                stderr=subprocess.STDOUT).returncode
         problem = scf_convergence_problem(run_dir / "OUTCAR")
-        text = (
-            (run_dir / "OUTCAR").read_text(errors="replace")
-            if (run_dir / "OUTCAR").exists()
-            else ""
-        )
+        text = (run_dir / "OUTCAR").read_text(errors="replace") if (run_dir / "OUTCAR").exists() else ""
         if rc != 0 or problem is not None or RELAX_DONE_MARKER not in text:
-            raise SystemExit(
-                f"relax_{label} failed: rc={rc}, SCF: {problem}, "
-                f"ionic convergence reached: {RELAX_DONE_MARKER in text}"
-            )
-        shutil.copy(run_dir / "CONTCAR", out)
-        log(
-            f"relax: {label} done, E = {parse_energy_from_outcar(run_dir / 'OUTCAR'):.8f} eV"
-        )
+            raise SystemExit(f"relax_init failed: rc={rc}, SCF: {problem}, "
+                             f"ionic convergence reached: {RELAX_DONE_MARKER in text}")
+        shutil.copy(run_dir / "CONTCAR", out_init)
+        log(f"relax: initial endpoint E = {parse_energy_from_outcar(run_dir / 'OUTCAR'):.8f} eV")
+    if out_final.exists():
+        log("relax: POSCAR_final already present, skipping")
+        return
+    relaxed = read_poscar(str(out_init))
+    write_poscar(str(out_final), inverted_final(ideal_init, ideal_final, relaxed))
+    log("relax: final endpoint written as the inversion image of the initial one")
 
 
 def yamatsumi(argv: list[str], log_path: Path) -> int:
@@ -463,7 +515,7 @@ def main() -> None:
         cmd = vasp_command(args)
         log(f"VASP command: {cmd}")
         prepare(work)
-        relax(work, cmd, potcar)
+        relax(work, cmd, potcar, args.kick)
         run_neb(work, cmd, potcar, args)
 
     try:
