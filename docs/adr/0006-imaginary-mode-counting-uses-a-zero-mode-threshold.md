@@ -30,3 +30,25 @@ residuals. The default will be replaced by three times the largest
 translational |nu| observed in the Si7 validation run, rounded up, provided
 it stays well below both the smallest real mode and the |nu| of the
 imaginary mode. This section will record the measured values.
+
+### Si7 attempt 3 (VASP 6.6.1, 2026-09-29)
+
+Full Hessian of the climbing image of the Si7 vacancy hop (IBRION=5,
+EDIFF=1E-8, 21 modes; `examples/si7_vacancy_vasp`):
+
+| quantity | |nu| (meV) |
+|---|---|
+| largest translational mode | 0.0068 |
+| smallest real mode | 11.64 |
+| smallest imaginary mode | 12.78 |
+
+The current default of 1.0 meV lies about 150 times above the largest
+translational mode and about 11 times below the smallest real and imaginary
+modes, so it classified all 21 modes correctly. The residual was not larger
+than in the perfect crystal, as expected above, but of the same small order.
+
+The rule above would give 3 x 0.0068 meV, rounded up, as the new default.
+That replacement is deferred: one system is not enough to set a default,
+and the H2/Cu(111) stage-(b) run (a metal slab with a light adsorbate)
+supplies the second data point. Until then the default stays at 1.0 meV,
+and the status stays "calibration pending".

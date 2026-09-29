@@ -73,7 +73,51 @@ continues an interrupted run.
 
 ### Stage (a) results
 
-Pending: the first run started on 2026-09-29.
+VASP 6.6.1, 4 MPI ranks, 2026-09-29. Run directories stay local
+([ADR 0007](adr/0007-real-vasp-output-enters-the-repo-only-as-excerpts.md)).
+
+**Attempt 1: stopped on the first NEB iteration.** The read-only POTCAR was
+copied with its permission bits and could not be overwritten. Fixed in
+`yamatsumi/directories.py`, which now copies file contents only.
+
+**Attempt 2: diverged, stopped by hand.** The unrelaxed-symmetry (T_d)
+endpoints were only a shallow metastable state. The end images fell 0.49 eV
+into a C3v minimum, and the climbing image ran away to +1.95 eV. The
+endpoints are now built from a relaxation with the migrating atom kicked
+0.1 Ang along the hop, and the final one as its inversion image.
+
+**Attempt 3: converged to a higher-order saddle.** 68 iterations, max|F|
+0.019 eV/Ang, interrupted after 10 and finished with `--resume`.
+
+| criterion | result | value |
+|---|---|---|
+| A1 converged | PASS | 0.0190 < 0.02 eV/Ang |
+| A2 all SCF converged | PASS | 8 OUTCARs (first reported FAIL: the check read an archived attempt-2 OUTCAR; fixed) |
+| A3 endpoints degenerate | PASS | 1e-5 meV |
+| A4 TS at bond midpoint | PASS | 0.0022 Ang |
+| A5 one imaginary, three zero | **FAIL** | 3 imaginary, 3 zero |
+| A6 alignment >= 0.9 | **FAIL** | not computed (needs exactly one imaginary mode) |
+| A7 resume | **FAIL** | numbering continuous and resume exercised, but A5/A6 failed |
+| A8 |T*S| < 1 meV/atom | PASS | 0.25 meV/atom |
+
+The whole path stayed on the <111> hop axis: the migrating atom had x = y = z
+in every image. Inversion-related endpoints give a C3v-symmetric
+interpolated path, and the NEB forces keep that symmetry, so CI-NEB reached
+the symmetric stationary point and nothing else. Its modes:
+
+| imaginary mode | |nu| (meV) | overlap with the path tangent (computed offline) |
+|---|---|---|
+| reaction mode | 32.45 | 0.9717 |
+| degenerate pair | 12.78, 12.78 | 0.0000 |
+
+yamatsumi counted and rejected this saddle correctly. The phonon section is
+kept as a regression fixture. The barrier of 1.30 eV is an upper bound for
+this cell, and has no physical meaning at one vacancy per 8 sites in any
+case.
+
+**Attempt 4: running.** The same endpoints; the intermediate images are
+displaced by a seeded random vector of at most 0.05 Ang before the first
+VASP call, which moves the migrating atom 0.01 to 0.03 Ang off the axis.
 
 ## Physics check on your own system: vacancy migration in a bulk FCC metal
 

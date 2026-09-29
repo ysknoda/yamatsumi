@@ -174,6 +174,26 @@ def test_real_vasp_bulk_si_minimum_has_no_imaginary_modes(tmp_path):
     assert result["is_transition_state"] is False
 
 
+_REAL_SI7_SYMMETRIC_SADDLE_PHONON = (
+    Path(__file__).parent / "fixtures" / "real_vasp_excerpts"
+    / "si7_symmetric_saddle_ibrion5_vasp661_phonon.OUTCAR"
+)
+
+
+def test_real_vasp_higher_order_saddle_is_rejected(tmp_path):
+    """
+    Regression test on real VASP 6.6.1 output. The climbing image of a
+    C3v-constrained Si7 vacancy hop is a saddle with three imaginary modes
+    (12.78, 12.78, 32.45 meV), next to three translational modes below
+    0.007 meV. It must be counted as such and must fail the TS test.
+    """
+    result = _run_on_real_outcar(tmp_path, _REAL_SI7_SYMMETRIC_SADDLE_PHONON)
+    assert len(result["frequencies"]) == 21
+    assert result["n_imaginary"] == 3
+    assert result["n_zero_modes"] == 3
+    assert result["is_transition_state"] is False
+
+
 def test_zero_modes_do_not_hide_a_genuine_imaginary_mode(tmp_path):
     result = _run_with_fake_frequencies(tmp_path, [-3e-6, -3e-6, -3e-6, -5.0, 10.0, 20.0])
     assert result["n_imaginary"] == 1

@@ -8,9 +8,15 @@ information and stay local.
 | File | Source | Lines | Source SHA-256 |
 |---|---|---|---|
 | `si8_bulk_ibrion6_vasp643_phonon.OUTCAR` | VASP 6.4.3, 8-atom conventional diamond Si, `IBRION = 6`, `NFREE = 2`, `POTIM = 0.01` | 9401-9669 (from the "Eigenvectors and eigenvalues of the dynamical matrix" header to just before "ELASTIC MODULI") | `c0acffdee2ab8632878dab87a8d911070e794bd3c304214afc97815546855aa3` |
+| `si7_symmetric_saddle_ibrion5_vasp661_phonon.OUTCAR` | VASP 6.6.1, climbing image of the Si7 vacancy hop, attempt 3 (`examples/si7_vacancy_vasp`), `IBRION = 5`, `NFREE = 2`, `POTIM = 0.015` | 61464-61677 (from the "Eigenvectors and eigenvalues of the dynamical matrix" header to the end of mode 21) | `14d656bf10753e07fbc2ad46ed5374859b07ca7b112fd5e05ce920da400ddc1e` |
 
 The source is a perfect crystal at its minimum, so the correct count of
 imaginary modes is zero. VASP labels the three translational modes `f/i`
 at about 3e-6 meV, which is the case
 [ADR 0006](../../../docs/adr/0006-imaginary-mode-counting-uses-a-zero-mode-threshold.md)
 addresses.
+
+The Si7 source is a saddle of a path held on the C3v axis, with three
+imaginary modes (12.78, 12.78 and 32.45 meV) and three translational modes
+below 0.007 meV, so the correct counts are 3 imaginary and 3 zero, and it
+is not a first-order transition state.
