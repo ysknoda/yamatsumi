@@ -121,7 +121,11 @@ def write_outcar(path, v: float, atom_forces, eigenvalues, eigenvectors, n_atoms
     shaped OUTCAR, not just the frequency header lines alone.
     """
     lines = [
+        "   NELM   =     60;   NELMIN=  2; NELMDL= -5     # of ELM steps \n",
+        "------------------------ aborting loop because EDIFF is reached "
+        "----------------------------------------\n",
         f"  free  energy   TOTEN  =   {v:.6f} eV\n",
+        "     LOOP+:  cpu time      0.0100: real time      0.0100\n",
         "\n",
         " POSITION                                       TOTAL-FORCE (eV/Angst)\n",
         " -----------------------------------------------------------------------------------\n",

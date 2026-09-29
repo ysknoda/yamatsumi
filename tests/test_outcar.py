@@ -248,3 +248,83 @@ def test_eigenvectors_no_anchor_returns_empty(tmp_path):
     path = tmp_path / "OUTCAR"
     path.write_text("no eigenvector section here\n")
     assert parse_eigenvectors_from_outcar(path, n_atoms=2) == []
+
+
+# ---------------------------------------------------------------------------
+# ADR 0003: SCF convergence detection and ionic-summary-only energies.
+# The marker lines below are copied verbatim from real VASP 6.6.1 OUTCARs
+# (Si2, converged and with NELM = 3); the same markers appear in 6.4.3.
+# ---------------------------------------------------------------------------
+
+_NELM_60 = "   NELM   =     60;   NELMIN=  2; NELMDL= -5     # of ELM steps \n"
+_NELM_3  = "   NELM   =      3;   NELMIN=  2; NELMDL=  0     # of ELM steps \n"
+_EDIFF_REACHED = (
+    "------------------------ aborting loop because EDIFF is reached "
+    "----------------------------------------\n"
+)
+_LOOP_PLUS = "     LOOP+:  cpu time      2.5090: real time      1.9252\n"
+
+
+def _elec(e):
+    return f"  free energy    TOTEN  =       {e:.8f} eV\n"
+
+
+def _summary(e):
+    return f"  free  energy   TOTEN  =       {e:.8f} eV\n"
+
+
+def _converged_step(e):
+    return [_elec(e + 0.1), _elec(e), _EDIFF_REACHED, _summary(e), _LOOP_PLUS]
+
+
+def test_scf_converged_single_point_has_no_problem(tmp_path):
+    from yamatsumi.outcar import scf_convergence_problem
+    p = tmp_path / "OUTCAR"
+    p.write_text("".join([_NELM_60, *_converged_step(-10.81465686)]))
+    assert scf_convergence_problem(p) is None
+
+
+def test_scf_unconverged_single_point_is_reported_with_nelm(tmp_path):
+    """VASP 6.6.1 exits 0 here and prints no marker (checked with NELM = 3)."""
+    from yamatsumi.outcar import scf_convergence_problem
+    p = tmp_path / "OUTCAR"
+    p.write_text("".join([_NELM_3, _elec(2.4), _elec(-10.83), _elec(-10.9977),
+                          _summary(-10.9977), _LOOP_PLUS]))
+    problem = scf_convergence_problem(p)
+    assert problem is not None
+    assert "NELM = 3" in problem
+
+
+def test_scf_one_unconverged_step_among_several_is_reported(tmp_path):
+    """A finite-difference phonon run has one SCF per displacement."""
+    from yamatsumi.outcar import scf_convergence_problem
+    p = tmp_path / "OUTCAR"
+    unconverged = [_elec(-9.0), _summary(-9.0), _LOOP_PLUS]
+    p.write_text("".join([_NELM_60, *_converged_step(-10.0), *unconverged,
+                          *_converged_step(-10.1)]))
+    problem = scf_convergence_problem(p)
+    assert problem is not None
+    assert "1 of 3" in problem
+
+
+def test_scf_outcar_without_any_ionic_step_is_reported(tmp_path):
+    from yamatsumi.outcar import scf_convergence_problem
+    p = tmp_path / "OUTCAR"
+    p.write_text(_NELM_60 + _elec(-9.0))
+    assert scf_convergence_problem(p) is not None
+
+
+def test_scf_missing_outcar_is_reported(tmp_path):
+    from yamatsumi.outcar import scf_convergence_problem
+    assert scf_convergence_problem(tmp_path / "OUTCAR") is not None
+
+
+def test_energy_ignores_trailing_electronic_step_lines(tmp_path):
+    """
+    A run stopped part-way through the next ionic step leaves per-electronic-
+    step TOTEN lines after the last completed step's summary. Only the
+    summary line is a converged ionic-step energy.
+    """
+    p = tmp_path / "OUTCAR"
+    p.write_text("".join([*_converged_step(-45.97327637), _elec(-46.85957269)]))
+    assert parse_energy_from_outcar(p) == pytest.approx(-45.97327637)

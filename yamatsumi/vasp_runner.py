@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from . import parallel
+from .outcar import scf_convergence_problem
 from .errors import NEBError
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,14 @@ def run_vasp(
                 f"{image_dir}: {marker!r}. See {log_file}"
             )
             return False
+
+    # VASP exits 0 when NELM runs out without meeting EDIFF, so an exit code
+    # alone would feed unconverged energies and forces into the path
+    # (ADR 0003).
+    problem = scf_convergence_problem(image_dir / "OUTCAR")
+    if problem is not None:
+        logger.error(f"  VASP run in {image_dir} is not usable: {problem}")
+        return False
 
     logger.info(f"  Done (rc={result.returncode}): {image_dir.name}")
     return True

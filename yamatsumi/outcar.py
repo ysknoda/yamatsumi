@@ -10,10 +10,54 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+# VASP prints this once per ionic step whose electronic SCF met EDIFF, and
+# prints nothing in its place when NELM runs out -- while still exiting 0
+# (verified on VASP 6.4.3 and 6.6.1). "LOOP+" closes every ionic step,
+# converged or not, so the two counts must match for a trustworthy run.
+_SCF_CONVERGED_MARKER = "aborting loop because EDIFF is reached"
+_IONIC_STEP_MARKER    = "LOOP+"
+
+# The ionic-step summary line has two spaces after "free" and three after
+# "energy". The per-electronic-step lines ("free energy    TOTEN") carry the
+# same keyword but are intermediate, unconverged energies (ADR 0003).
+_IONIC_ENERGY_MARKER = "free  energy   TOTEN"
+
+
+def scf_convergence_problem(outcar_path: Path) -> Optional[str]:
+    """
+    Return None if every ionic step recorded in *outcar_path* reached EDIFF,
+    otherwise a human-readable description of what is wrong (missing file,
+    no completed ionic step, or how many steps ran out of NELM).
+    """
+    try:
+        with open(outcar_path, errors="replace") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return f"no readable OUTCAR at {outcar_path}"
+
+    n_steps     = sum(1 for ln in lines if _IONIC_STEP_MARKER in ln)
+    n_converged = sum(1 for ln in lines if _SCF_CONVERGED_MARKER in ln)
+    nelm = next(
+        (ln.split("=", 1)[1].split(";", 1)[0].strip()
+         for ln in lines if ln.strip().startswith("NELM") and "=" in ln),
+        "unknown",
+    )
+    if n_steps == 0:
+        return f"{outcar_path} records no completed ionic step (no '{_IONIC_STEP_MARKER}' line)"
+    if n_converged < n_steps:
+        return (
+            f"electronic SCF did not reach EDIFF in {n_steps - n_converged} of "
+            f"{n_steps} ionic step(s) within NELM = {nelm} ({outcar_path}). "
+            "Raise NELM, or change ALGO/mixing, in CopyDir/INCAR."
+        )
+    return None
+
+
 def parse_energy_from_outcar(outcar_path: Path) -> Optional[float]:
     """
-    Return the last TOTEN value (eV) from an OUTCAR, or None if not found.
-    Relevant line:  '  free  energy   TOTEN  =   -123.456789 eV'
+    Return the last ionic-step TOTEN value (eV) from an OUTCAR, or None if
+    not found. Relevant line:  '  free  energy   TOTEN  =   -123.456789 eV'
+    (per-electronic-step 'free energy    TOTEN' lines are ignored).
 
     A line whose value field cannot be parsed (e.g. VASP's "********"
     field-overflow marker) is skipped rather than raising, leaving whatever
@@ -23,7 +67,7 @@ def parse_energy_from_outcar(outcar_path: Path) -> Optional[float]:
     try:
         with open(outcar_path) as fh:
             for line in fh:
-                if "TOTEN" in line and "eV" in line:
+                if _IONIC_ENERGY_MARKER in line and "eV" in line:
                     parts = line.split("=")
                     if len(parts) >= 2:
                         try:
