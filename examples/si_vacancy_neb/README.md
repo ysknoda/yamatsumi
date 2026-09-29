@@ -71,6 +71,11 @@ EDIFFG = -0.01  # eV/Ang -- tight enough that residual forces are small
 which `CopyDir/INCAR` deliberately keeps at the single-point values
 `yamatsumi` itself requires for the NEB step). Overwrite `POSCAR_init` /
 `POSCAR_final` with each relaxation's `CONTCAR` once done.
+VASP writes `CONTCAR` with fractional coordinates wrapped into [0, 1), so an
+atom near a cell face can come back on the opposite face. yamatsumi unwraps
+the final endpoint against the initial one when it reads them
+([ADR 0001](../../docs/adr/0001-fractional-coordinates-are-never-wrapped.md)),
+so the CONTCARs can be used as they are.
 
 ## Step 2 -- supply your own POTCAR
 

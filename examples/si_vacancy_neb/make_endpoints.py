@@ -157,12 +157,14 @@ def main() -> None:
     parser.add_argument("--supercell-size", type=int, default=2,
                         help="n for the n x n x n supercell of the 8-atom conventional cell "
                              "(default: 2 -> 64 sites, 63 atoms after the vacancy)")
-    parser.add_argument("--lattice-constant", type=float, default=SI_LATTICE_CONST_ANG,
-                        help=f"Conventional-cell lattice constant in Ang "
-                             f"(default: {SI_LATTICE_CONST_ANG}, experimental Si at 300 K, "
-                             "Ioffe NSM archive). Override to build the same diamond-cubic "
-                             "geometry for another element (e.g. Ge, C).")
-    parser.add_argument("--element", default="Si", help="Species label written to the POSCAR (default: Si)")
+    parser.add_argument("--lattice-constant", type=float, default=None,
+                        help=f"Conventional-cell lattice constant in Ang. Defaults to "
+                             f"{SI_LATTICE_CONST_ANG} (experimental Si at 300 K, Ioffe NSM "
+                             "archive) for --element Si, and is required for any other "
+                             "element.")
+    parser.add_argument("--element", default="Si",
+                        help="Species label written to the POSCAR (default: Si). For another "
+                             "diamond-cubic element, also give its --lattice-constant.")
     parser.add_argument("--vacancy-site", type=int, default=None,
                         help="Lattice-site index (0-based, before vacancy removal) to vacate. "
                              "Default: the site nearest the supercell centre (physically "
@@ -171,6 +173,27 @@ def main() -> None:
                         help="Directory to write POSCAR_init / POSCAR_final into "
                              "(default: this script's own directory)")
     args = parser.parse_args()
+
+    # --- Input validation: refuse anything that would write a wrong pair ---
+    if args.supercell_size < 1:
+        parser.error(f"--supercell-size must be at least 1 (got {args.supercell_size}).")
+    if args.lattice_constant is None:
+        if args.element != "Si":
+            parser.error(
+                f"--element {args.element} needs its own --lattice-constant; the "
+                f"default {SI_LATTICE_CONST_ANG} Ang is silicon's and would give "
+                f"{args.element}-{args.element} bonds of silicon's length."
+            )
+        args.lattice_constant = SI_LATTICE_CONST_ANG
+    if args.lattice_constant <= 0.0:
+        parser.error(f"--lattice-constant must be positive (got {args.lattice_constant}).")
+    n_sites = 8 * args.supercell_size ** 3
+    if args.vacancy_site is not None and not 0 <= args.vacancy_site < n_sites:
+        parser.error(
+            f"--vacancy-site must be a site index from 0 to {n_sites - 1} for a "
+            f"{args.supercell_size}x{args.supercell_size}x{args.supercell_size} supercell "
+            f"(got {args.vacancy_site}); negative Python-style indices are not accepted."
+        )
 
     poscar_init, poscar_final, site_a, site_b, nn_distance = build_endpoints(
         args.supercell_size, args.lattice_constant, args.element, args.vacancy_site,
@@ -216,7 +239,14 @@ def main() -> None:
         )
     moved_distance = float(per_atom_disp.max())
     print(f"  Atoms that differ between init/final: {n_moved} "
-          f"(displacement {moved_distance:.6f} Ang, expected {nn_distance:.6f} Ang) -> OK")
+          f"(displacement {moved_distance:.6f} Ang, expected {nn_distance:.6f} Ang)")
+    if abs(moved_distance - nn_distance) > 1e-6:
+        raise SystemExit(
+            f"FAILED verification: the migrating atom moves {moved_distance:.6f} Ang, "
+            f"not the nearest-neighbour distance {nn_distance:.6f} Ang, so this is not "
+            "a nearest-neighbour vacancy hop. Aborting without writing any output."
+        )
+    print("  -> migrating atom moves exactly one nearest-neighbour distance: OK")
 
     # 3. yamatsumi's own consistency check (species/counts/lattice/atom
     #    count) -- this is exactly what `phase_init` runs before
