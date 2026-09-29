@@ -22,7 +22,7 @@ A_SI = 5.431
 def _run(tmp_path, *argv):
     out = tmp_path / "out"
     r = subprocess.run([sys.executable, str(SCRIPT), *argv, "--output-dir", str(out)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, check=False)
     return r, out
 
 
