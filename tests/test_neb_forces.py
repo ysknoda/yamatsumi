@@ -118,3 +118,33 @@ def test_numba_consistency_if_available():
     jit_f   = _neb_force_kernel(F_true, jit_t, dR_plus, dR_minus, 2.0, False)
     plain_f = _neb_force_kernel.py_func(F_true, plain_t, dR_plus, dR_minus, 2.0, False)
     assert np.allclose(jit_f, plain_f, atol=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# Degenerate energies: the weighted tangent must not collapse to zero
+# ---------------------------------------------------------------------------
+
+_DRP = np.array([0.30, 0.02, 0.0])   # R_{i+1} - R_i
+_DRM = np.array([0.08, -0.01, 0.0])  # R_i - R_{i-1}
+
+
+def test_tangent_falls_back_to_bisection_when_three_energies_are_equal():
+    """
+    With e_prev = e_i = e_next both energy weights are zero, and the
+    Henkelman-Jonsson weighted tangent was the zero vector. The bisection
+    tangent of the same paper (JCP 113, 9901 (2000)) is used instead.
+    """
+    from yamatsumi.neb_forces import _tangent_kernel
+    t = _tangent_kernel(_DRP, _DRM, -10.0, -10.0, -10.0)
+    expected = _DRM / np.linalg.norm(_DRM) + _DRP / np.linalg.norm(_DRP)
+    assert np.allclose(t, expected / np.linalg.norm(expected), atol=1e-14)
+
+
+def test_spring_force_survives_equal_energies():
+    """|dR+| - |dR-| = 0.22 Ang must still produce a spring force."""
+    from yamatsumi.neb_forces import _neb_force_kernel, _tangent_kernel
+    f_true = np.array([0.4, -0.2, 0.0])
+    t = _tangent_kernel(_DRP, _DRM, -10.0, -10.0, -10.0)
+    f_neb = _neb_force_kernel(f_true, t, _DRP, _DRM, 5.0, False)
+    spring = 5.0 * (np.linalg.norm(_DRP) - np.linalg.norm(_DRM))
+    assert np.dot(f_neb, t) == pytest.approx(spring, rel=1e-12)

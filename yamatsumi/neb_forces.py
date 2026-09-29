@@ -47,6 +47,20 @@ def _tangent_kernel(
         else:
             t = dR_plus * w_min + dR_minus * w_max
     norm = np.sqrt(np.sum(t * t))
+    if norm <= 1e-15:
+        # e_prev == e_i == e_next makes both energy weights zero, so the
+        # weighted tangent vanishes and with it the spring force and the CI
+        # inversion. Fall back to the bisection tangent of the same paper,
+        # tau = dR-/|dR-| + dR+/|dR+| (Henkelman & Jonsson, JCP 113, 9901
+        # (2000)), which is nonzero whenever the neighbours are distinct.
+        n_plus  = np.sqrt(np.sum(dR_plus * dR_plus))
+        n_minus = np.sqrt(np.sum(dR_minus * dR_minus))
+        t = np.zeros_like(dR_plus)
+        if n_plus > 1e-15:
+            t = t + dR_plus / n_plus
+        if n_minus > 1e-15:
+            t = t + dR_minus / n_minus
+        norm = np.sqrt(np.sum(t * t))
     if norm > 1e-15:
         return t / norm
     return np.zeros_like(t)
@@ -137,6 +151,16 @@ def compute_neb_forces(
         tangent  = _tangent_kernel(
             dR_plus, dR_minus, energies[i - 1], energies[i], energies[i + 1],
         )
+        if energies[i - 1] == energies[i] == energies[i + 1]:
+            logger.warning(
+                f"  Image [{i}] and both neighbours have identical energies "
+                f"({energies[i]:.8f} eV): using the bisection tangent."
+            )
+        if not np.any(tangent):
+            logger.warning(
+                f"  Image [{i}] coincides with a neighbour: its tangent is zero, "
+                "so it gets no spring force this step."
+            )
         tangents_out.append(tangent)
 
         F_true = masked_forces[i].ravel()
