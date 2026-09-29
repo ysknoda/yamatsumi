@@ -128,6 +128,15 @@ def test_validate_args_accepts_defaults():
         # 0 never moves an image; negative moves uphill.
         ["--sd-alpha", "0"],
         ["--quickmin-dt", "-0.1"],
+        # FIRE parameters outside the algorithm's definition.
+        ["--fire-dt0", "0"],
+        ["--fire-dt-max", "0.05"],       # below the default dt0 of 0.1
+        ["--fire-f-inc", "0.5"],
+        ["--fire-f-dec", "1.5"],
+        ["--fire-f-dec", "0"],
+        ["--fire-alpha0", "2.0"],
+        ["--fire-f-alpha", "0"],
+        ["--fire-n-min", "-1"],
     ],
 )
 def test_validate_args_rejects_meaningless_numeric_values(argv):

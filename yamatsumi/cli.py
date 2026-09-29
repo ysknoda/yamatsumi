@@ -400,6 +400,24 @@ def validate_args(args) -> None:
             "a negative spring constant pushes images apart along the path "
             "instead of keeping them evenly spaced."
         )
+    # FIRE (Bitzek et al., PRL 97, 170201 (2006)) needs dt to grow on a
+    # downhill run (f_inc > 1), shrink on a reset (0 < f_dec < 1), and a
+    # mixing weight in (0, 1]. Out-of-range values froze every image
+    # (--fire-dt0 0), made dt run away on resets (--fire-f-dec 1.5), or
+    # flipped the velocity each step (--fire-alpha0 2).
+    fire_rules = [
+        ("--fire-dt0", args.fire_dt0, args.fire_dt0 > 0.0, "must be positive"),
+        ("--fire-dt-max", args.fire_dt_max, args.fire_dt_max >= args.fire_dt0,
+         f"must be at least --fire-dt0 ({args.fire_dt0})"),
+        ("--fire-f-inc", args.fire_f_inc, args.fire_f_inc > 1.0, "must be greater than 1"),
+        ("--fire-f-dec", args.fire_f_dec, 0.0 < args.fire_f_dec < 1.0, "must lie strictly between 0 and 1"),
+        ("--fire-alpha0", args.fire_alpha0, 0.0 < args.fire_alpha0 <= 1.0, "must lie in (0, 1]"),
+        ("--fire-f-alpha", args.fire_f_alpha, 0.0 < args.fire_f_alpha <= 1.0, "must lie in (0, 1]"),
+        ("--fire-n-min", args.fire_n_min, args.fire_n_min >= 0, "must not be negative"),
+    ]
+    for flag, value, ok, rule in fire_rules:
+        if not ok:
+            raise NEBError(f"{flag} {rule} (got {value}).")
     if args.zero_mode_tol < 0.0:
         raise NEBError(
             f"--zero-mode-tol must not be negative (got {args.zero_mode_tol}); "
