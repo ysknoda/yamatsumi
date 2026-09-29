@@ -264,3 +264,40 @@ def test_idpp_freezes_fixed_atoms_at_linear_position():
     idpp_images   = idpp_interpolate_images(init, final, num_images=2)
     for lin_img, idpp_img in zip(linear_images, idpp_images):
         assert np.array_equal(idpp_img.positions[0], lin_img.positions[0])
+
+
+# ---------------------------------------------------------------------------
+# ADR 0001: a VASP-wrapped final endpoint must be unwrapped against init
+# ---------------------------------------------------------------------------
+
+def _two_atom(z_second):
+    return Poscar(
+        comment="e", scale=1.0, lattice=np.eye(3) * 10.0, species=["H"], counts=[2],
+        coord_type="Direct", positions=np.array([[0.5, 0.5, 0.4], [0.5, 0.5, z_second]]),
+    )
+
+
+def test_wrapped_final_endpoint_is_unwrapped_against_init():
+    """
+    Atom 2 moves from z = 0.02 to z = -0.02 across the cell boundary. VASP
+    writes the relaxed final endpoint's CONTCAR wrapped into [0, 1), as
+    z = 0.98. The intermediate images already used the MIC displacement,
+    but the final image was used verbatim, so the last segment contained a
+    whole lattice vector (measured max|F_NEB| = 49 eV/Ang on that image).
+    """
+    images = interpolate_images(_two_atom(0.02), _two_atom(0.98), 3)
+    assert images[-1].positions[1, 2] == pytest.approx(-0.02)
+    steps = [images[k + 1].positions - images[k].positions for k in range(len(images) - 1)]
+    for s in steps:
+        assert np.allclose(s, steps[0]), "every segment must be the same MIC step"
+
+
+def test_unwrapped_final_is_bit_identical_when_nothing_is_wrapped():
+    final = _two_atom(0.03)
+    images = interpolate_images(_two_atom(0.02), final, 3)
+    assert np.array_equal(images[-1].positions, final.positions)
+
+
+def test_idpp_also_returns_the_unwrapped_final_endpoint():
+    images = idpp_interpolate_images(_two_atom(0.02), _two_atom(0.98), 3)
+    assert images[-1].positions[1, 2] == pytest.approx(-0.02)

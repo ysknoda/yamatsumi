@@ -84,10 +84,31 @@ def interpolate_images(
     Create *num_images* linearly interpolated intermediate Poscar objects.
     MIC is applied per atom to ensure the shortest periodic path.
     Returns [ init, img_1, ..., img_N, final ].
+
+    The returned final endpoint is *final* unwrapped against *init* (ADR
+    0001): any atom whose fractional coordinate differs from init by more
+    than half a cell is shifted by whole lattice vectors onto the same MIC
+    path the intermediate images follow. VASP writes CONTCAR wrapped into
+    [0, 1), so a relaxed final endpoint can put an atom that moved from
+    z = 0.02 to z = -0.02 at z = 0.98, and the un-MIC'd tangent of the last
+    segment would then contain a whole lattice vector. Atoms that need no
+    shift keep their coordinates bit for bit.
     """
     check_endpoint_consistency(init, final)
 
     d = mic_displacement(init.positions, final.positions)  # (N, 3), MIC-wrapped
+
+    shift = np.round(final.positions - init.positions)       # whole cells, per component
+    if np.any(shift != 0.0):
+        moved = sorted({int(a) for a in np.nonzero(np.any(shift != 0.0, axis=1))[0]})
+        logger.info(
+            "Unwrapped the final endpoint against the initial one by whole "
+            f"lattice vectors for {len(moved)} atom(s): "
+            + ", ".join(str(a + 1) for a in moved[:20])
+            + (" ..." if len(moved) > 20 else "")
+            + " (VASP writes CONTCAR wrapped into [0, 1); see docs/adr/0001)."
+        )
+        final = final.with_positions(final.positions - shift)
 
     images = [init.copy()]
     for i in range(1, num_images + 1):
