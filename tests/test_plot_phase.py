@@ -26,7 +26,8 @@ def _write_outcar(path, energy):
 
 
 def _stage_images(tmp_path):
-    for name, e in [("0", -10.0), ("1", -9.0), ("2", -10.5)]:
+    # Two-digit names, as get_image_dirs() produces (ADR 0005).
+    for name, e in [("00", -10.0), ("01", -9.0), ("02", -10.5)]:
         d = tmp_path / name
         d.mkdir()
         _write_outcar(d / "OUTCAR", e)

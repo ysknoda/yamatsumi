@@ -24,7 +24,12 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 from .. import parallel
-from ..directories import check_vasp_relaxation_disabled, get_image_dirs, prepare_image_directory
+from ..directories import (
+    check_no_legacy_image_dirs,
+    check_vasp_relaxation_disabled,
+    get_image_dirs,
+    prepare_image_directory,
+)
 from ..errors import NEBError
 from ..kinetics import arrhenius_rate, compute_barriers
 from ..neb_forces import compute_neb_forces
@@ -394,6 +399,7 @@ def phase_neb(args) -> None:
         _rlog(root, f"  MPI ranks    : {parallel.get_size(comm)}")
     _rlog(root, "=" * 60)
 
+    check_no_legacy_image_dirs(work_dir, args.num_images)
     image_dirs = get_image_dirs(work_dir, args.num_images)
     for idir in image_dirs:
         if not idir.exists():

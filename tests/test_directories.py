@@ -66,7 +66,9 @@ def test_get_image_dirs_count_and_naming():
 
     dirs = get_image_dirs(Path("/work"), num_images=5)
     assert len(dirs) == 7  # 5 intermediates + 2 endpoints
-    assert [d.name for d in dirs] == ["0", "1", "2", "3", "4", "5", "6"]
+    # ADR 0005: always at least two digits, as VASP IMAGES and VTST use.
+    # (1.0.0a1 produced "0".."6" here, contradicting its own docstring.)
+    assert [d.name for d in dirs] == ["00", "01", "02", "03", "04", "05", "06"]
 
 
 def test_get_image_dirs_zero_pads_for_double_digit_totals():
@@ -169,3 +171,14 @@ def test_prepare_image_directory_requires_incar_in_copy_dir(tmp_path):
     (copy_dir / "KPOINTS").write_text("Gamma\n")
     with pytest.raises(NEBError, match="INCAR"):
         prepare_image_directory(tmp_path / "00", copy_dir)
+
+
+def test_get_image_dirs_is_two_digit_for_every_small_count():
+    from pathlib import Path
+    for n in range(1, 9):
+        assert all(len(d.name) == 2 for d in get_image_dirs(Path("/w"), n))
+
+
+def test_get_image_dirs_widens_beyond_99():
+    from pathlib import Path
+    assert get_image_dirs(Path("/w"), 99)[-1].name == "100"

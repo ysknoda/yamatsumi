@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 
 from .. import parallel
-from ..directories import get_image_dirs
+from ..directories import check_no_legacy_image_dirs, get_image_dirs
 from ..errors import NEBError
 from ..kinetics import compute_barriers
 from ..outcar import parse_energy_from_outcar
@@ -20,6 +20,7 @@ def phase_plot(args) -> None:
     root = parallel.is_root(comm)
 
     work_dir   = Path(args.work_dir).resolve()
+    check_no_legacy_image_dirs(work_dir, args.num_images)
     image_dirs = get_image_dirs(work_dir, args.num_images)
     for idir in image_dirs:
         if not (idir / "OUTCAR").exists():

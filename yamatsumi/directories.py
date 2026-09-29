@@ -132,7 +132,31 @@ def get_image_dirs(work_dir: Path, num_images: int) -> List[Path]:
     """
     Return all image Path objects:
       [ work_dir/00, work_dir/01, ..., work_dir/<num_images+1> ]
+    (at least two digits; see ADR 0005)
     """
     total = num_images + 2
-    width = len(str(total - 1))
+    # Always at least two digits, as VASP's own IMAGES mode and the VTST
+    # scripts expect (ADR 0005); wider only past index 99.
+    width = max(2, len(str(total - 1)))
     return [work_dir / str(i).zfill(width) for i in range(total)]
+
+
+def check_no_legacy_image_dirs(work_dir: Path, num_images: int) -> None:
+    """
+    Raise NEBError if *work_dir* holds a run laid out by yamatsumi 1.0.0a1,
+    which named image directories with a single digit ("0".."9") whenever
+    there were at most 8 intermediate images. Continuing such a run under the
+    two-digit layout would not find it, so say why instead of reporting the
+    image directories as simply missing.
+    """
+    single = [work_dir / str(i) for i in range(min(num_images + 2, 10))]
+    if (work_dir / "00").exists() or not all(p.is_dir() for p in single):
+        return
+    raise NEBError(
+        f"{work_dir} uses the single-digit image directory names of "
+        f"yamatsumi 1.0.0a1 ('0'..'{min(num_images + 1, 9)}'); image "
+        "directories are now always two-digit ('00', '01', ...), matching "
+        "VASP IMAGES and VTST (docs/adr/0005). Rename each directory with a "
+        "leading zero (0 -> 00, 1 -> 01, ...) to continue this run, or start a "
+        "new one in a fresh --work-dir."
+    )

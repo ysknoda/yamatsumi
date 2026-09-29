@@ -385,3 +385,18 @@ def test_update_and_run_waits_for_every_rank_before_touching_files(tmp_path, mon
     assert "barrier" in events[:first_touch], (
         f"image files were touched before all ranks synchronised: {events}"
     )
+
+
+def test_phase_neb_refuses_a_single_digit_work_dir_from_1_0_0a1(tmp_path):
+    """
+    ADR 0005: 1.0.0a1 named image directories "0".."4" for 3 images. Resuming
+    such a run must stop with an explanation, not silently create "00".."04"
+    and start again from scratch while the user thinks it was continued.
+    """
+    from yamatsumi.phases.neb_phase import phase_neb
+
+    args = _minimal_phase_neb_args(tmp_path, resume=True)
+    for i in range(5):
+        (tmp_path / "NEB_run" / str(i)).mkdir(parents=True)
+    with pytest.raises(NEBError, match="single-digit"):
+        phase_neb(args)
