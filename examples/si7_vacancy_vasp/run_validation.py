@@ -68,6 +68,7 @@ from yamatsumi.outcar import (
 from yamatsumi.poscar import read_poscar, write_poscar
 
 NUM_IMAGES = 4  # even, so no image starts on the symmetric saddle
+RUN_OUTPUT_DIRS = ("relax_init", "neb")
 N_ATOMS = 7
 
 # Shared electronic settings. Every value is fixed in docs/real_vasp_validation.md.
@@ -314,6 +315,15 @@ def _result_fields(text: str) -> dict:
     return fields
 
 
+def current_run_outcars(work: Path) -> list:
+    """Every OUTCAR written by this run's relax and neb stages.
+
+    Archived attempts and diagnostic runs kept beside them under *work* are
+    not part of the run being judged, so they are left out.
+    """
+    return sorted(p for sub in RUN_OUTPUT_DIRS for p in (work / sub).rglob("OUTCAR"))
+
+
 def evaluate(work: Path, args) -> dict:
     neb = work / "neb"
     report: dict = {"criteria": {}, "data": {}}
@@ -330,7 +340,7 @@ def evaluate(work: Path, args) -> dict:
         result_path.exists() and max_f and max_f[-1] < args.force_tol
     )
 
-    outcars = sorted(work.rglob("OUTCAR"))
+    outcars = current_run_outcars(work)
     problems = {str(p.relative_to(work)): scf_convergence_problem(p) for p in outcars}
     data["outcars_checked"] = len(outcars)
     data["scf_problems"] = {k: v for k, v in problems.items() if v}
