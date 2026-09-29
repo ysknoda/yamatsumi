@@ -133,7 +133,12 @@ def stage_inputs(run_dir: Path, incar: str, potcar: Path) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "INCAR").write_text(incar)
     (run_dir / "KPOINTS").write_text(KPOINTS)
-    shutil.copy(potcar, run_dir / "POTCAR")
+    # Contents only: library POTCARs are read-only, and a read-only copy
+    # could not be replaced when a stage is re-staged.
+    dst = run_dir / "POTCAR"
+    if dst.exists():
+        dst.unlink()
+    shutil.copyfile(potcar, dst)
 
 
 def prepare(work: Path) -> None:
@@ -461,7 +466,14 @@ def main() -> None:
         relax(work, cmd, potcar)
         run_neb(work, cmd, potcar, args)
 
-    report = evaluate(work, args)
+    try:
+        report = evaluate(work, args)
+    except (OSError, ValueError, KeyError, IndexError, TypeError) as exc:
+        # A run that stopped early lacks some outputs: report that instead
+        # of a traceback, so the failure itself stays visible.
+        report = {"criteria": {}, "data": {}, "passed": False,
+                  "evaluation_error": f"{type(exc).__name__}: {exc}"}
+        log(f"evaluation incomplete: {report['evaluation_error']}")
     (work / "validation_report.json").write_text(json.dumps(report, indent=2))
     for name, ok in report["criteria"].items():
         log(f"{'PASS' if ok else 'FAIL'}  {name}")
