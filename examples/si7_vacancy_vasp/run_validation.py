@@ -29,6 +29,10 @@ can sit from the saddle at a 0.02 eV/Ang force tolerance depends on the
 unknown curvature there. A failure must be reported and explained, not
 tuned away.
 
+Before the NEB the intermediate images are randomly perturbed (--perturb,
+--seed): otherwise the path keeps the endpoints' C3v symmetry and CI-NEB
+reaches a higher-order saddle (see perturb_images()).
+
 Stages are checkpointed: rerunning the script skips any stage whose output
 already exists, and an interrupted NEB is continued with --resume.
 
@@ -66,6 +70,7 @@ from yamatsumi.outcar import (
     scf_convergence_problem,
 )
 from yamatsumi.poscar import read_poscar, write_poscar
+from yamatsumi.vasp_runner import run_vasp_for_images
 
 NUM_IMAGES = 4  # even, so no image starts on the symmetric saddle
 RUN_OUTPUT_DIRS = ("relax_init", "neb")
@@ -245,6 +250,30 @@ def relax(work: Path, vasp_cmd: str, potcar: Path, kick_ang: float) -> None:
     log("relax: final endpoint written as the inversion image of the initial one")
 
 
+def perturb_images(neb: Path, max_ang: float, seed: int) -> None:
+    """
+    Displace every atom of the intermediate images by a random vector of at
+    most *max_ang* Ang, reproducibly for a given *seed*; endpoints are kept.
+
+    Endpoints related by inversion make the interpolated path, and every NEB
+    force along it, keep the C3v symmetry about the hop axis, so CI-NEB can
+    only reach the symmetric stationary point: in attempt 3 (2026-09-29) that
+    was a saddle with three imaginary modes, two of them a degenerate pair
+    orthogonal to the path. Any off-axis component lets the path leave that
+    subspace. The mean displacement is removed so no image is translated.
+    """
+    rng = np.random.default_rng(seed)
+    for idir in get_image_dirs(neb, NUM_IMAGES)[1:-1]:
+        poscar = read_poscar(str(idir / "POSCAR"))
+        d = rng.normal(size=poscar.positions.shape)
+        d *= (rng.uniform(0.0, 1.0, size=len(d)) / np.linalg.norm(d, axis=1))[:, None]
+        d -= d.mean(axis=0)
+        d *= max_ang / np.linalg.norm(d, axis=1).max()
+        cart = direct_to_cartesian(poscar.positions, poscar.lattice) + d
+        write_poscar(str(idir / "POSCAR"),
+                     poscar.with_positions(cartesian_to_direct(cart, poscar.lattice)))
+
+
 def yamatsumi(argv: list[str], log_path: Path) -> int:
     with open(log_path, "a") as fh:
         return subprocess.run(
@@ -281,9 +310,18 @@ def run_neb(work: Path, vasp_cmd: str, potcar: Path, args) -> None:
     ]
     log_path = work / "yamatsumi.log"
     if not (neb / "convergence_history.csv").exists():
+        # Phase 1 is split so the images can be perturbed before VASP sees
+        # them: stage without running VASP, perturb, then run the initial
+        # single points exactly as Phase 1 would.
+        if yamatsumi(["--phase", "init", "--dry-run", *common], log_path) != 0:
+            raise SystemExit("neb: staging the images failed; see yamatsumi.log")
+        perturb_images(neb, args.perturb, args.seed)
+        log(f"neb: intermediate images perturbed by up to {args.perturb} Ang "
+            f"(seed {args.seed})")
+        run_vasp_for_images(get_image_dirs(neb, NUM_IMAGES), vasp_cmd)
         log(f"neb: part 1, stopping after {args.interrupt_after} iterations (A7)")
         yamatsumi(
-            ["--phase", "all", "--max-iter", str(args.interrupt_after), *common],
+            ["--phase", "neb", "--max-iter", str(args.interrupt_after), *common],
             log_path,
         )
     if (neb / "yamatsumi_result.txt").exists():
@@ -489,6 +527,15 @@ def main() -> None:
         "--kick", type=float, default=0.1,
         help="Push of the migrating atom along the hop before relaxing the initial "
         "endpoint, in Ang (default: 0.1); see kicked_init()",
+    )
+    p.add_argument(
+        "--perturb", type=float, default=0.05,
+        help="Largest random displacement of an intermediate-image atom before "
+        "the NEB, in Ang (default: 0.05); see perturb_images()",
+    )
+    p.add_argument(
+        "--seed", type=int, default=20260929,
+        help="Seed of the image perturbation (default: 20260929)",
     )
     p.add_argument(
         "--evaluate-only", action="store_true", help="Only evaluate an existing run"
