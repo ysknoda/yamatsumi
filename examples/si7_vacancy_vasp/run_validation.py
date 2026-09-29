@@ -7,16 +7,15 @@ This checks the software against real VASP, not the physics of the Si
 vacancy: at one vacancy per 8 sites the barrier has no physical meaning.
 What makes the cell useful is symmetry. The two endpoints are related by the
 inversion centre at the midpoint of the hopping bond, so without fitting
-anything we know that the endpoint energies must agree, that the
-transition state must sit at the bond midpoint, and that it must have
-exactly one imaginary mode along the path. The acceptance criteria below
+anything we know that the endpoint energies must agree and that the
+transition state must have exactly one imaginary mode along the path. The acceptance criteria below
 were fixed before the first run and must not be relaxed afterwards to make
 a run pass.
 
   A1  NEB converges: max|F_NEB| < --force-tol within --max-iter
   A2  every VASP run reached EDIFF (yamatsumi stops otherwise; re-checked)
   A3  |E_init - E_final| < 1 meV              (symmetry-equivalent endpoints)
-  A4  migrating atom within 0.02 Ang of the bond midpoint in TS_POSCAR
+  A4  forward barrier < 1.3013 eV, the symmetric saddle of attempt 3
   A5  exactly 1 imaginary mode and 3 zero modes (full Hessian)
   A6  eigenvector-tangent alignment >= 0.9
   A7  the run is interrupted after --interrupt-after iterations and finished
@@ -24,10 +23,18 @@ a run pass.
       the resumed run must itself satisfy A1-A6
   A8  |T*S| < 1 meV/atom in every image's final OUTCAR
 
-A4 (0.02 Ang) and A6 (0.9) are below 90% confidence: how far the geometry
-can sit from the saddle at a 0.02 eV/Ang force tolerance depends on the
-unknown curvature there. A failure must be reported and explained, not
-tuned away.
+A6 (0.9) is below 90% confidence: how far the tangent can sit from the
+saddle's mode at a 0.02 eV/Ang force tolerance depends on the unknown
+curvature there. A failure must be reported and explained, not tuned away.
+
+A4 was replaced on 2026-09-29 at 22:37, before any result of attempt 4
+existed, with the user's approval. It used to require the migrating atom
+within 0.02 Ang of the bond midpoint. Attempt 3 showed that point, with the
+path held on the hop axis, to be a saddle with three imaginary modes; the
+first-order saddle lies off the axis and so need not be at the midpoint.
+Any first-order saddle reached by leaving the symmetric one along its
+unstable pair must lie lower, whatever its geometry. The TS position
+relative to the midpoint is still reported, as data only.
 
 Before the NEB the intermediate images are randomly perturbed (--perturb,
 --seed): otherwise the path keeps the endpoints' C3v symmetry and CI-NEB
@@ -74,6 +81,9 @@ from yamatsumi.vasp_runner import run_vasp_for_images
 
 NUM_IMAGES = 4  # even, so no image starts on the symmetric saddle
 RUN_OUTPUT_DIRS = ("relax_init", "neb")
+# Barrier of the C3v-constrained saddle with three imaginary modes that
+# attempt 3 (2026-09-29) converged to; the bound of criterion A4.
+SYMMETRIC_SADDLE_BARRIER_EV = 1.3013
 N_ATOMS = 7
 
 # Shared electronic settings. Every value is fixed in docs/real_vasp_validation.md.
@@ -407,13 +417,17 @@ def evaluate(work: Path, args) -> dict:
         off = direct_to_cartesian(
             mic_displacement(midpoint, ts.positions[k]), init.lattice
         )
+        axis = d[k] / np.linalg.norm(d[k])
+        along = float(off @ axis)
         data["migrating_atom"] = k + 1
         data["ts_distance_from_bond_midpoint_Ang"] = float(np.linalg.norm(off))
-        crit["A4_ts_at_bond_midpoint"] = (
-            data["ts_distance_from_bond_midpoint_Ang"] < 0.02
-        )
-    else:
-        crit["A4_ts_at_bond_midpoint"] = False
+        data["ts_distance_from_bisecting_plane_Ang"] = abs(along)
+        data["ts_distance_from_hop_axis_Ang"] = float(
+            np.linalg.norm(off - along * axis))
+    forward = res.get("Forward  activation barrier")
+    crit["A4_below_symmetric_saddle"] = bool(
+        forward and float(forward.split()[0]) < SYMMETRIC_SADDLE_BARRIER_EV
+    )
 
     n_imag = int(res.get("Imaginary frequencies found", -1))
     n_zero = next(
@@ -440,7 +454,7 @@ def evaluate(work: Path, args) -> dict:
             for c in (
                 "A1_converged",
                 "A3_endpoints_degenerate",
-                "A4_ts_at_bond_midpoint",
+                "A4_below_symmetric_saddle",
                 "A5_one_imaginary_three_zero",
                 "A6_alignment",
             )

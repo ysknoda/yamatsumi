@@ -25,19 +25,31 @@ afterwards to make a run pass:
 
 | # | Criterion | Threshold | Why |
 |---|---|---|---|
-| A1 | NEB converges | max\|F_NEB\| < 0.02 eV/Ang within 300 iterations | Tight enough for A4 to be meaningful |
+| A1 | NEB converges | max\|F_NEB\| < 0.02 eV/Ang within 300 iterations | Tight enough for A5 and A6 to be meaningful |
 | A2 | Every VASP run reaches EDIFF | no exceptions | [ADR 0003](adr/0003-unconverged-scf-is-a-hard-failure.md); yamatsumi stops otherwise, and every OUTCAR is re-checked |
 | A3 | Endpoints are degenerate | \|E_init - E_final\| < 1 meV | Symmetry-equivalent; only the relaxation residual differs |
-| A4 | TS at the bond midpoint | migrating atom within 0.02 Ang (UNCERTAIN) | Inversion centre |
+| A4 | Below the symmetric saddle | forward barrier < 1.3013 eV (replaced before attempt 4; see below) | The first-order saddle lies off the hop axis, below the three-imaginary-mode saddle of attempt 3 |
 | A5 | Imaginary modes | exactly 1, plus exactly 3 zero modes | First-order saddle; translational invariance ([ADR 0006](adr/0006-imaginary-mode-counting-uses-a-zero-mode-threshold.md)) |
 | A6 | Eigenvector-tangent alignment | >= 0.9 (UNCERTAIN) | Unstable direction matches the intended path |
 | A7 | Resume | stopped after 10 iterations, finished with `--resume`; continuous iteration numbering and A1-A6 still met | `--resume` on real VASP |
 | A8 | Smearing entropy | \|T*S\| < 1 meV/atom in every image | VASP Wiki, "Smearing technique" |
 
-A4 and A6 are marked UNCERTAIN (below 90% confidence): how close the
-climbing image gets to the saddle at a 0.02 eV/Ang force tolerance depends
-on the curvature there, which is unknown beforehand. A miss is reported
-and explained, never tuned away.
+A6 is marked UNCERTAIN (below 90% confidence): how close the climbing
+image gets to the saddle at a 0.02 eV/Ang force tolerance depends on the
+curvature there, which is unknown beforehand. A miss is reported and
+explained, never tuned away.
+
+**A4 was replaced once, on 2026-09-29 at 22:37, before attempt 4 had
+produced any result, with the user's approval.** It used to require the
+migrating atom within 0.02 Ang of the bond midpoint, on the assumption that
+the inversion centre is the saddle. Attempt 3 showed that point, with the
+path held on the hop axis, to be a saddle with three imaginary modes. The
+first-order saddle lies off the axis: either on a C2 axis through the
+bond midpoint (equidistant from both sites, but off the midpoint) or as a
+pair of inversion-related saddles with a minimum between them. Either way
+it is not at the midpoint, and it lies below the symmetric saddle. The TS
+position relative to the midpoint, the bisecting plane and the hop axis is
+still reported, as data only. Attempts 1-3 were judged under the old A4.
 
 Settings (`run_validation.py` holds the exact INCAR): PAW_PBE Si 05Jan2001,
 ENCUT = 400 eV (1.63 x ENMAX 245.345 eV, read from the POTCAR), PREC =
@@ -94,7 +106,7 @@ endpoints are now built from a relaxation with the migrating atom kicked
 | A1 converged | PASS | 0.0190 < 0.02 eV/Ang |
 | A2 all SCF converged | PASS | 8 OUTCARs (first reported FAIL: the check read an archived attempt-2 OUTCAR; fixed) |
 | A3 endpoints degenerate | PASS | 1e-5 meV |
-| A4 TS at bond midpoint | PASS | 0.0022 Ang |
+| A4 (old) TS at bond midpoint | PASS | 0.0022 Ang (under the new A4 it fails: 1.3013 eV is the bound itself) |
 | A5 one imaginary, three zero | **FAIL** | 3 imaginary, 3 zero |
 | A6 alignment >= 0.9 | **FAIL** | not computed (needs exactly one imaginary mode) |
 | A7 resume | **FAIL** | numbering continuous and resume exercised, but A5/A6 failed |
