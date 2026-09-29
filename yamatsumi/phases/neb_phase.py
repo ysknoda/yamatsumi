@@ -288,13 +288,14 @@ def finalize(
 
     if args.dry_run:
         phonon = dict(
-            frequencies=[], n_imaginary=0, is_transition_state=False,
+            frequencies=[], n_imaginary=0, n_zero_modes=0, is_transition_state=False,
             phonon_calculation_failed=False, eigenvector_tangent_alignment=None,
         )
     else:
         phonon = verify_transition_state(
             ts_poscar, ts_dir, args.vasp_cmd, copy_dir,
             vasp_timeout=args.vasp_timeout, tangent=ci_tangent,
+            zero_mode_tol_mev=args.zero_mode_tol,
         )
 
     result_path = work_dir / "yamatsumi_result.txt"
@@ -316,6 +317,10 @@ def finalize(
         fh.write("\nTransition-state phonon verification (IBRION=5):\n")
         fh.write(f"  Phonon calculation failed   : {phonon['phonon_calculation_failed']}\n")
         fh.write(f"  Imaginary frequencies found : {phonon['n_imaginary']}\n")
+        fh.write(
+            f"  Zero modes (|nu| <= {args.zero_mode_tol:g} meV): "
+            f"{phonon.get('n_zero_modes', 0)}\n"
+        )
         fh.write(f"  TS criterion satisfied      : {phonon['is_transition_state']}\n")
         alignment = phonon.get("eigenvector_tangent_alignment")
         if alignment is not None:
@@ -326,7 +331,8 @@ def finalize(
         if phonon["frequencies"]:
             fh.write("  All frequencies (meV):\n")
             for k, freq in enumerate(phonon["frequencies"]):
-                tag = " [imaginary]" if freq < 0 else ""
+                tag = (" [imaginary]" if freq < -args.zero_mode_tol
+                       else " [zero mode]" if abs(freq) <= args.zero_mode_tol else "")
                 fh.write(f"    {k + 1:4d}  {freq:10.4f} meV{tag}\n")
 
     logger.info(f"  Result summary written: {result_path}")

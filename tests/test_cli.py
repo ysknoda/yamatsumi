@@ -123,6 +123,8 @@ def test_validate_args_accepts_defaults():
         ["--vasp-timeout", "-10"],
         ["--ci-start-iter", "0"],
         ["--local-workers", "0"],
+        # A negative tolerance would count every mode as imaginary.
+        ["--zero-mode-tol", "-1"],
     ],
 )
 def test_validate_args_rejects_meaningless_numeric_values(argv):

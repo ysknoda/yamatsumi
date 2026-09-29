@@ -29,3 +29,9 @@ KB_EV_PER_K              = 8.617333262e-5  # Boltzmann constant, eV/K
 DEFAULT_TEMPERATURE_K    = 300.0
 DEFAULT_ATTEMPT_FREQ_HZ  = 1.0e13           # typical lattice-vibration order of magnitude
 DEFAULT_RATE_ESTIMATE    = "none"
+
+# Phonon modes with |nu| at or below this value (meV) are treated as the
+# zero-frequency translational modes of a periodic cell, not as imaginary
+# modes. PROVISIONAL: to be calibrated against the Si7 real-VASP validation
+# run -- see docs/adr/0006-imaginary-mode-counting-uses-a-zero-mode-threshold.md.
+DEFAULT_ZERO_MODE_TOL_MEV = 1.0          # meV (about 8 cm^-1)

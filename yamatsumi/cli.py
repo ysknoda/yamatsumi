@@ -34,6 +34,7 @@ from .constants import (
     DEFAULT_TEMPERATURE_K,
     DEFAULT_VASP_CMD,
     DEFAULT_WORK_DIR,
+    DEFAULT_ZERO_MODE_TOL_MEV,
 )
 from .errors import NEBError
 from .phases.init_phase import phase_init
@@ -239,6 +240,18 @@ Notes
         ),
     )
 
+    ts_g = p.add_argument_group("Transition-state verification (finite-difference phonons)")
+    ts_g.add_argument(
+        "--zero-mode-tol", type=float, default=DEFAULT_ZERO_MODE_TOL_MEV, metavar="MEV",
+        help=(
+            "Phonon modes with |nu| at or below this value (meV) are counted as "
+            "translational zero modes rather than imaginary modes. VASP prints "
+            "the three translational modes of a periodic cell with arbitrary "
+            "sign. 0 restores a sign-only count. Provisional default, see "
+            f"docs/adr/0006  (default: {DEFAULT_ZERO_MODE_TOL_MEV})"
+        ),
+    )
+
     rate_g = p.add_argument_group(
         "Reaction-rate estimate (optional)",
         description=(
@@ -357,6 +370,11 @@ def validate_args(args) -> None:
             f"--spring-const must not be negative (got {args.spring_const}); "
             "a negative spring constant pushes images apart along the path "
             "instead of keeping them evenly spaced."
+        )
+    if args.zero_mode_tol < 0.0:
+        raise NEBError(
+            f"--zero-mode-tol must not be negative (got {args.zero_mode_tol}); "
+            "use 0 for a sign-only imaginary-mode count."
         )
     if args.vasp_timeout is not None and args.vasp_timeout <= 0.0:
         raise NEBError(

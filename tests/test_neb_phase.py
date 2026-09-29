@@ -1,7 +1,6 @@
 """Tests for internal helpers in yamatsumi.phases.neb_phase."""
 from __future__ import annotations
 
-import argparse
 import csv
 import math
 from pathlib import Path
@@ -52,11 +51,14 @@ def test_compute_convergence_matches_hand_computed_values():
 
 
 def _make_finalize_args(tmp_path, **overrides):
-    ns = argparse.Namespace(
-        work_dir=str(tmp_path), dry_run=True, vasp_cmd="unused", vasp_timeout=None,
-        rate_estimate="none", temperature=300.0, attempt_freq=1.0e13,
-        plot_out="energy_profile.png", plot_fmt="png", no_show=True,
-    )
+    """
+    Args for finalize(), built from build_parser() so that every attribute
+    finalize reads exists with its real default -- a hand-written Namespace
+    silently falls behind whenever a CLI option is added.
+    """
+    ns = build_parser().parse_args([
+        "--work-dir", str(tmp_path), "--dry-run", "--vasp-cmd", "unused", "--no-show",
+    ])
     for k, v in overrides.items():
         setattr(ns, k, v)
     return ns

@@ -7,6 +7,7 @@ from typing import Optional
 
 import numpy as np
 
+from .constants import DEFAULT_ZERO_MODE_TOL_MEV
 from .constraints import apply_mask, build_mask
 from .directories import prepare_image_directory
 from .outcar import parse_eigenvectors_from_outcar, parse_frequencies_from_outcar
@@ -23,11 +24,23 @@ def verify_transition_state(
     copy_dir     : Path,
     vasp_timeout : Optional[float] = None,
     tangent      : Optional[np.ndarray] = None,
+    zero_mode_tol_mev : float = DEFAULT_ZERO_MODE_TOL_MEV,
 ) -> dict:
     """
     Verify the TS criterion by running VASP finite-difference phonons (IBRION=5).
-    Returns dict with keys: frequencies, n_imaginary, is_transition_state,
-    phonon_calculation_failed, eigenvector_tangent_alignment.
+    Returns dict with keys: frequencies, n_imaginary, n_zero_modes,
+    is_transition_state, phonon_calculation_failed,
+    eigenvector_tangent_alignment.
+
+    A mode counts as imaginary only if its frequency is below
+    -zero_mode_tol_mev. Modes with |nu| <= zero_mode_tol_mev are counted
+    separately as zero modes: the translational modes of a periodic cell are
+    exactly zero in exact arithmetic, and VASP prints them with arbitrary
+    sign ('f/i' included), so a sign-only count reports three imaginary modes
+    even for a perfect crystal at its minimum (ADR 0006). A full Hessian (no
+    Selective Dynamics) should give exactly three zero modes; any other count
+    is logged as a warning, since it points to an unconverged or noisy
+    Hessian or to a tolerance that does not suit the system.
 
     `phonon_calculation_failed` distinguishes "the phonon VASP subprocess
     itself failed" from "it ran fine and genuinely found the wrong number of
@@ -73,19 +86,34 @@ def verify_transition_state(
     if not run_vasp(phonon_dir, vasp_cmd, timeout=vasp_timeout):
         logger.warning("  Phonon run failed - TS criterion cannot be verified.")
         return dict(
-            frequencies=[], n_imaginary=0, is_transition_state=False,
+            frequencies=[], n_imaginary=0, n_zero_modes=0, is_transition_state=False,
             phonon_calculation_failed=True, eigenvector_tangent_alignment=None,
         )
 
     frequencies = parse_frequencies_from_outcar(phonon_dir / "OUTCAR")
-    n_imaginary = sum(1 for f in frequencies if f < 0)
-    is_ts       = (n_imaginary == 1)
+    n_imaginary  = sum(1 for f in frequencies if f < -zero_mode_tol_mev)
+    n_zero_modes = sum(1 for f in frequencies if abs(f) <= zero_mode_tol_mev)
+    is_ts        = (n_imaginary == 1)
 
     logger.info(
         "  Phonon frequencies (meV): "
         + "  ".join(f"{f:+.3f}" for f in frequencies)
     )
-    logger.info(f"  Imaginary frequencies: {n_imaginary}")
+    logger.info(
+        f"  Imaginary frequencies: {n_imaginary}   "
+        f"zero modes (|nu| <= {zero_mode_tol_mev:g} meV): {n_zero_modes}"
+    )
+    full_hessian = (
+        poscar.selective_dynamics is None
+        or bool(np.all(np.asarray(poscar.selective_dynamics)))
+    )
+    if full_hessian and n_zero_modes != 3:
+        logger.warning(
+            f"  Expected 3 translational zero modes for a full Hessian, found "
+            f"{n_zero_modes} with --zero-mode-tol {zero_mode_tol_mev:g} meV. "
+            "The Hessian may be noisy, or the tolerance may not suit this system; "
+            "inspect the frequency list before trusting the imaginary-mode count."
+        )
     if is_ts:
         logger.info("  TS criterion SATISFIED: exactly one imaginary frequency.")
     else:
@@ -96,10 +124,12 @@ def verify_transition_state(
 
     alignment = None
     if is_ts and tangent is not None:
-        imaginary_freq = next(f for f in frequencies if f < 0)
         modes = parse_eigenvectors_from_outcar(phonon_dir / "OUTCAR", poscar.n_atoms)
-        matching = [evec for freq, evec in modes if freq == imaginary_freq]
-        if matching:
+        # Select by the same threshold as the count above, never by float
+        # equality: the translational modes share the imaginary mode's sign
+        # and can precede it in the list.
+        matching = [evec for freq, evec in modes if freq < -zero_mode_tol_mev]
+        if len(matching) == 1:
             eigvec = matching[0]
             tan    = np.asarray(tangent, dtype=float).reshape(eigvec.shape)
             mask   = build_mask(poscar.selective_dynamics, eigvec.shape)
@@ -119,6 +149,7 @@ def verify_transition_state(
     return dict(
         frequencies                    = frequencies,
         n_imaginary                    = n_imaginary,
+        n_zero_modes                   = n_zero_modes,
         is_transition_state            = is_ts,
         phonon_calculation_failed      = False,
         eigenvector_tangent_alignment  = alignment,
