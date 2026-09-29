@@ -42,3 +42,6 @@ vasp_run.log
 
 # Real VASP output fixture (large, kept local-only by decision)
 tests/fixtures/real_vasp/
+
+# Real-VASP validation runs (large; contain licensed POTCARs)
+examples/si7_vacancy_vasp/run/
