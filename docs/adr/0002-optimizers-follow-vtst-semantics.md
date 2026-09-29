@@ -32,3 +32,22 @@ of DFT forces.
 This changes the default behaviour of an existing command line. It is accepted
 because the package is an alpha release. `--step-size` keeps its default of
 0.05 Ang, which is more conservative than the VTST `MAXMOVE` of 0.2 Ang.
+
+## Amendment: the climbing image uses the ordinary FIRE step
+
+yamatsumi originally ran the climbing image through its own FIRE variant.
+The power test used only the component of the force perpendicular to the
+path, so that the uphill tangential component would not "falsely" reset the
+velocity. As a result the tangential velocity was never damped. It
+oscillated about the saddle, each sign flip halved `dt`, and the image froze
+short of the saddle. On E = x^4/4 - x^2/2 + 0.3x + y^2/2, `dt` fell to about
+1e-180 with the image 0.0285 Ang from the saddle and max|F_NEB| stuck at
+0.018 eV/Ang. That residual is below a 0.02 eV/Ang tolerance, so the run
+would have been reported as converged at the wrong geometry.
+
+The climbing image now takes the ordinary FIRE step on the force that
+`compute_neb_forces` already returns for it, F - 2(F.tau)tau, which is a
+descent direction for the climbing objective. VTST and ASE both do this.
+The same surface now converges in 97 iterations with the image 2.5e-6 Ang
+from the saddle. The Muller-Brown demo converges in 26 iterations instead of
+103, with the barrier unchanged to 2e-5 eV.

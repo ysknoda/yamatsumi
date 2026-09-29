@@ -373,7 +373,7 @@ def test_update_and_run_waits_for_every_rank_before_touching_files(tmp_path, mon
     image_dirs = [tmp_path / f"{i:02d}" for i in range(n_inter + 2)]
     neb_phase._update_and_run(
         images=[_dummy_poscar()] * (n_inter + 2), neb_forces=[None] * n_inter,
-        tangents=[None] * n_inter, ci_index=2, opt_states=[None] * n_inter,
+        ci_index=2, opt_states=[None] * n_inter,
         image_dirs=image_dirs, copy_dir=tmp_path, iteration=1, n_inter=n_inter,
         optimizer="fire", step_size=0.05, vasp_cmd="unused",
         comm=_RecordingComm(events), local_workers=1, sanitize_mpi_env=False,

@@ -94,7 +94,7 @@ def test_step_fire_d4_caps_velocity_before_euler_step():
     p = _poscar([[0.0, 0.0, 0.0]])
     state = OptimizerState(n_atoms=1, dt0=0.1, alpha0=0.1, f_dec=0.5)
     forces = np.array([[10.0, 0.0, 0.0]])
-    updated = step_fire(p, forces, state, step_size=0.05, is_ci=False, tangent=None)
+    updated = step_fire(p, forces, state, step_size=0.05)
 
     # P = F.v = 0 (v starts at 0) -> not > 0 -> v=0, dt *= f_dec -> 0.05
     # v = 0 + F*dt = (10,0,0)*0.05 = (0.5,0,0); v_max=0.5 > step_size(0.05)
@@ -102,17 +102,6 @@ def test_step_fire_d4_caps_velocity_before_euler_step():
     assert updated.positions[0, 0] == pytest.approx(0.0025, abs=1e-12)
     assert state.dt == pytest.approx(0.05, abs=1e-12)
     assert np.allclose(state.velocity, [[0.05, 0.0, 0.0]], atol=1e-12)
-
-
-def test_step_fire_ci_uses_tangent_split():
-    p = _poscar([[0.0, 0.0, 0.0]])
-    state = OptimizerState(n_atoms=1, dt0=0.1)
-    forces = np.array([[1.0, 1.0, 0.0]])
-    tangent = np.array([1.0, 0.0, 0.0])
-    updated = step_fire(p, forces, state, step_size=0.5, is_ci=True, tangent=tangent)
-    # Should not raise, and should produce a finite, distinct-from-input position.
-    assert updated.positions.shape == (1, 3)
-    assert not np.allclose(updated.positions, p.positions)
 
 
 @pytest.mark.parametrize("stepper_name", ["sd", "quickmin", "fire"])
@@ -129,7 +118,7 @@ def test_selective_dynamics_freezes_fixed_atom(stepper_name):
         updated = step_quickmin(p, forces, state, step_size=0.1)
     else:
         state = OptimizerState(n_atoms=2, dt0=0.1)
-        updated = step_fire(p, forces, state, step_size=0.1, is_ci=False, tangent=None)
+        updated = step_fire(p, forces, state, step_size=0.1)
 
     assert np.array_equal(updated.positions[1], p.positions[1]), (
         f"{stepper_name}: fixed atom moved from {p.positions[1]} to {updated.positions[1]}"
@@ -156,7 +145,7 @@ def test_steppers_share_lattice_and_selective_dynamics_by_reference():
     assert updated_qm.selective_dynamics is p.selective_dynamics
 
     state_fire = OptimizerState(n_atoms=1, dt0=0.1)
-    updated_fire = step_fire(p, forces, state_fire, step_size=0.1, is_ci=False, tangent=None)
+    updated_fire = step_fire(p, forces, state_fire, step_size=0.1)
     assert updated_fire.lattice is p.lattice
     assert updated_fire.selective_dynamics is p.selective_dynamics
 
@@ -239,16 +228,18 @@ def test_fire_displacement_is_capped_even_with_dt_above_one():
     state = OptimizerState(n_atoms=1, dt0=4.0, dt_max=5.0)
     state.velocity = np.array([[1.0, 0.0, 0.0]])
     state.n_pos = 10
-    updated = step_fire(p, np.array([[10.0, 0.0, 0.0]]), state, step_size=0.05,
-                        is_ci=False, tangent=None)
+    updated = step_fire(p, np.array([[10.0, 0.0, 0.0]]), state, step_size=0.05)
     assert _disp(p, updated) <= 0.05 + 1e-12
 
 
 def test_climbing_image_fire_never_moves_frozen_atoms():
     """
-    Regression: the CI FIRE kernel receives an unmasked tangent, so its
-    velocity can be nonzero on frozen components, and the position update
-    used that velocity before the mask was applied.
+    Regression: the old CI kernel worked with the unmasked tangent, so its
+    velocity was nonzero on frozen components, and the position update used
+    it before the mask was applied (a frozen atom drifted ~4.4e-4 Ang in 60
+    steps). The climbing image's force is built here the way
+    compute_neb_forces builds it, F - 2(F.tau)tau, from a tangent with a
+    nonzero frozen block.
     """
     sd_flags = np.array([[True, True, True], [False, False, False]])
     p = _poscar([[0.3, 0.5, 0.5], [0.7, 0.5, 0.5]], selective_dynamics=sd_flags)
@@ -258,11 +249,59 @@ def test_climbing_image_fire_never_moves_frozen_atoms():
     tangent /= np.linalg.norm(tangent)
     rng = np.random.default_rng(5)
     for _ in range(60):
-        p = step_fire(p, rng.standard_normal((2, 3)) * 0.5, state, 0.05,
-                      is_ci=True, tangent=tangent)
+        f = rng.standard_normal(6) * 0.5
+        f_ci = (f - 2.0 * np.dot(f, tangent) * tangent).reshape(2, 3)
+        p = step_fire(p, f_ci, state, 0.05)
     assert np.array_equal(p.positions[1], frozen0)
 
 
 def test_default_optimizer_is_fire():
     from yamatsumi.cli import build_parser
     assert build_parser().parse_args([]).optimizer == "fire"
+
+
+def test_climbing_image_reaches_the_saddle_on_an_asymmetric_surface():
+    """
+    Regression for the CI FIRE dt collapse. E = x^4/4 - x^2/2 + 0.3x + y^2/2
+    has its first-order saddle at the middle root of x^3 - x + 0.3 = 0
+    (x = 0.338936). With the power test applied to the perpendicular force
+    only, the climbing image's tangential velocity was never damped, dt
+    halved on every sign flip (to ~1e-180), and the image froze 0.0285 Ang
+    from the saddle with max|F_NEB| stuck at 0.018 eV/Ang. Package code
+    only; no VASP.
+    """
+    from yamatsumi.geometry import direct_to_cartesian
+    from yamatsumi.neb_forces import compute_neb_forces
+    from yamatsumi.optimizers import update_all_images
+
+    box = 20.0
+    x_a, x_ts, x_b = np.sort(np.roots([1.0, 0.0, -1.0, 0.3]).real)
+
+    def energy(x, y):
+        return x**4 / 4 - x**2 / 2 + 0.3 * x + y**2 / 2
+
+    def image(x, y):
+        return Poscar(comment="i", scale=1.0, lattice=np.eye(3) * box, species=["H"],
+                      counts=[1], coord_type="Direct",
+                      positions=np.array([[0.5 + x / box, 0.5 + y / box, 0.5]]))
+
+    images = [image(x_a + t * (x_b - x_a), 0.3 * np.sin(np.pi * t)) for t in np.linspace(0, 1, 7)]
+    states = [OptimizerState(n_atoms=1) for _ in range(5)]
+    prev_ci = None
+    for _ in range(300):
+        xy = [direct_to_cartesian(p.positions, p.lattice)[0, :2] - box / 2 for p in images]
+        energies = [energy(*q) for q in xy]
+        forces = [np.array([[-(q[0]**3 - q[0] + 0.3), -q[1], 0.0]]) for q in xy]
+        ci = int(np.argmax(energies[1:-1])) + 1
+        if prev_ci is not None and ci != prev_ci:
+            states[prev_ci - 1].full_reset()
+            states[ci - 1].full_reset()
+        prev_ci = ci
+        neb, _ = compute_neb_forces(images, forces, energies, 5.0, ci)
+        if max(np.linalg.norm(f, axis=1).max() for f in neb) < 0.01:
+            break
+        images = [images[0], *update_all_images(images, neb, states, "fire", 0.05),
+                  images[-1]]
+    else:
+        pytest.fail("CI-NEB did not converge to 0.01 eV/Ang within 300 iterations")
+    assert abs(xy[ci][0] - x_ts) < 1e-3

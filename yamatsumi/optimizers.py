@@ -236,55 +236,20 @@ def step_quickmin(
 # ---------------------------------------------------------------------------
 
 @njit(cache=True)
-def _fire_kernel_ci(
-    F_flat, v_flat, tangent,
-    dt, alpha, n_pos,
-    n_min, f_inc, f_dec, alpha0, f_alpha, dt_max,
-    step_size, n_atoms,
-):
-    """FIRE update for the climbing image (perpendicular/tangential split)."""
-    F_t    = np.sum(F_flat * tangent)
-    F_tang = tangent * F_t
-    F_perp = F_flat - F_tang
-    v_t    = np.sum(v_flat * tangent)
-    v_tang = tangent * v_t
-    v_perp = v_flat - v_tang
-
-    P_perp   = np.sum(F_perp * v_perp)
-    F_p_norm = np.sqrt(np.sum(F_perp * F_perp))
-
-    if P_perp > 0.0 and F_p_norm > 1e-20:
-        v_perp_norm = np.sqrt(np.sum(v_perp * v_perp))
-        v_perp = v_perp * (1.0 - alpha) + F_perp * (alpha * v_perp_norm / F_p_norm)
-        if n_pos > n_min:
-            dt    = min(dt * f_inc, dt_max)
-            alpha = alpha * f_alpha
-        n_pos = n_pos + 1
-    else:
-        v_perp = np.zeros_like(v_perp)
-        dt     = dt * f_dec
-        alpha  = alpha0
-        n_pos  = 0
-
-    v_perp = v_perp + F_perp * dt
-    v_tang = v_tang + F_tang * dt
-    v_flat = v_perp + v_tang
-
-    v_max = _max_atom_norm(v_flat, n_atoms)
-    if v_max > step_size:
-        v_flat = v_flat * (step_size / v_max)
-
-    return v_flat, dt, alpha, n_pos
-
-
-@njit(cache=True)
 def _fire_kernel_plain(
     F_flat, v_flat,
     dt, alpha, n_pos,
     n_min, f_inc, f_dec, alpha0, f_alpha, dt_max,
     step_size, n_atoms,
 ):
-    """FIRE update for a non-climbing image."""
+    """
+    FIRE update (Bitzek et al., PRL 97, 170201 (2006)) for any image.
+
+    The climbing image goes through this same kernel: compute_neb_forces
+    already returns its tangentially inverted force F - 2(F.tau)tau, which is
+    a legitimate descent direction for the climbing objective, so the power
+    test on the full force is the standard treatment (as in VTST and ASE).
+    """
     F_norm = np.sqrt(np.sum(F_flat * F_flat))
     P      = np.sum(F_flat * v_flat)
     if P > 0.0 and F_norm > 1e-20:
@@ -314,17 +279,14 @@ def step_fire(
     forces    : np.ndarray,
     state     : OptimizerState,
     step_size : float,
-    is_ci     : bool,
-    tangent   : Optional[np.ndarray],
 ) -> Poscar:
     """
-    One FIRE step with CI split-component treatment.
-
-    For the climbing image the power test P = F.v is applied only to the
-    perpendicular component of the force/velocity so that the uphill
-    tangential component does not trigger false resets. Velocity is capped
-    BEFORE the Euler displacement so the capped velocity is used for both
-    the position update and the stored state.
+    One FIRE step. For the climbing image *forces* is its inverted NEB force;
+    no separate treatment is needed (see _fire_kernel_plain). Until ADR 0002
+    was amended, the climbing image applied the power test to the
+    perpendicular force only; its tangential velocity was then never damped,
+    oscillated about the saddle, and each sign flip halved dt until the image
+    froze short of the saddle (dt ~ 1e-180 on an asymmetric test surface).
     """
     n = poscar.n_atoms
     lat = poscar.lattice
@@ -334,23 +296,15 @@ def step_fire(
     velocity_flat = apply_mask(np.asarray(state.velocity, dtype=float), mask).ravel()
     cart_flat     = direct_to_cartesian(poscar.positions, lat).ravel()
 
-    if is_ci and tangent is not None:
-        v_flat, new_dt, new_alpha, new_n_pos = _fire_kernel_ci(
-            forces_flat, velocity_flat, np.asarray(tangent, dtype=float),
-            state.dt, state.alpha, state.n_pos,
-            state.n_min, state.f_inc, state.f_dec, state._alpha0, state.f_alpha, state.dt_max,
-            step_size, n,
-        )
-    else:
-        v_flat, new_dt, new_alpha, new_n_pos = _fire_kernel_plain(
-            forces_flat, velocity_flat,
-            state.dt, state.alpha, state.n_pos,
-            state.n_min, state.f_inc, state.f_dec, state._alpha0, state.f_alpha, state.dt_max,
-            step_size, n,
-        )
+    v_flat, new_dt, new_alpha, new_n_pos = _fire_kernel_plain(
+        forces_flat, velocity_flat,
+        state.dt, state.alpha, state.n_pos,
+        state.n_min, state.f_inc, state.f_dec, state._alpha0, state.f_alpha, state.dt_max,
+        step_size, n,
+    )
 
-    # Mask BEFORE moving: the climbing-image kernel works with the unmasked
-    # NEB tangent, so its velocity can be nonzero on frozen components.
+    # Mask before moving, so that no velocity carried over from an earlier
+    # step can move a fixed degree of freedom.
     v_flat = apply_mask(v_flat.reshape(n, 3), mask).ravel()
     # The kernels cap the velocity at step_size, which bounds the move only
     # while dt <= 1; cap the move itself as well (ADR 0002).
@@ -372,27 +326,26 @@ def step_fire(
 def update_all_images(
     images     : List[Poscar],
     neb_forces : List[np.ndarray],
-    tangents   : List[np.ndarray],
-    ci_index   : int,
     opt_states : List[OptimizerState],
     optimizer  : str,
     step_size  : float,
 ) -> List[Poscar]:
-    """Apply the selected optimiser to all intermediate images."""
+    """
+    Apply the selected optimiser to all intermediate images. The climbing
+    image needs no special case here: its NEB force is already inverted.
+    """
     opt     = optimizer.lower()
     updated = []
-    for j, (fmat, tau) in enumerate(zip(neb_forces, tangents)):
-        img_idx = j + 1
-        state   = opt_states[j]
-        poscar  = images[img_idx]
-        is_ci   = (img_idx == ci_index)
+    for j, fmat in enumerate(neb_forces):
+        state  = opt_states[j]
+        poscar = images[j + 1]
 
         if opt == "sd":
             new_p = step_sd(poscar, fmat, step_size, alpha=state.sd_alpha)
         elif opt == "quickmin":
             new_p = step_quickmin(poscar, fmat, state, step_size)
         elif opt == "fire":
-            new_p = step_fire(poscar, fmat, state, step_size, is_ci, tau)
+            new_p = step_fire(poscar, fmat, state, step_size)
         else:
             raise NEBError(
                 f"Unknown optimizer '{optimizer}'. "

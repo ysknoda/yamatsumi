@@ -187,7 +187,6 @@ def _last_completed_iteration(csv_path: Path) -> int:
 def _update_and_run(
     images           : List[Poscar],
     neb_forces       : List[np.ndarray],
-    tangents         : List[np.ndarray],
     ci_index         : int,
     opt_states       : list,
     image_dirs       : List[Path],
@@ -216,8 +215,6 @@ def _update_and_run(
     updated_poscars = update_all_images(
         images     = images,
         neb_forces = neb_forces,
-        tangents   = tangents,
-        ci_index   = ci_index,
         opt_states = opt_states,
         optimizer  = optimizer,
         step_size  = step_size,
@@ -557,7 +554,6 @@ def phase_neb(args) -> None:
         updated_intermediates = _update_and_run(
             images           = images,
             neb_forces       = neb_forces,
-            tangents         = tangents,
             ci_index         = effective_ci,
             opt_states       = opt_states,
             image_dirs       = image_dirs,
