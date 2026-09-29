@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import List, Optional
 
 from . import parallel
-from .outcar import scf_convergence_problem
 from .errors import NEBError
+from .outcar import scf_convergence_problem
 
 logger = logging.getLogger(__name__)
 

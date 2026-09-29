@@ -6,7 +6,6 @@ import textwrap
 
 from yamatsumi.vasp_runner import run_vasp
 
-
 # Written by the fake VASP scripts below that should count as successful:
 # run_vasp now also requires every ionic step's SCF to have converged
 # (ADR 0003). Marker lines are verbatim from a real VASP 6.6.1 OUTCAR.
