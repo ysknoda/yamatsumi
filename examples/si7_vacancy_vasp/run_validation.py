@@ -476,6 +476,11 @@ def main() -> None:
         help="Iterations before the deliberate interruption tested by A7 (default: 10)",
     )
     p.add_argument(
+        "--kick", type=float, default=0.1,
+        help="Push of the migrating atom along the hop before relaxing the initial "
+        "endpoint, in Ang (default: 0.1); see kicked_init()",
+    )
+    p.add_argument(
         "--evaluate-only", action="store_true", help="Only evaluate an existing run"
     )
     args = p.parse_args()
