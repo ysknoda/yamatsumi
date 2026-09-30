@@ -45,3 +45,7 @@ tests/fixtures/real_vasp/
 
 # Real-VASP validation runs (large; contain licensed POTCARs)
 examples/si7_vacancy_vasp/run/
+examples/h2_cu111_vasp/run/
+
+# Others
+references/
