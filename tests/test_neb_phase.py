@@ -311,7 +311,9 @@ def test_phase_neb_resume_within_max_iter_proceeds(tmp_path):
     """
     The guard must not false-positive on a resume that still has iterations
     left: with 3 completed and --max-iter 10 the run continues, failing only
-    later for the unrelated (expected here) missing-OUTCAR reason.
+    later for an unrelated (expected here) reason: the images have no
+    OUTCAR, so the resume re-runs them, and this setup has no CopyDir INCAR
+    to stage them with.
     """
     work_dir = tmp_path / "NEB_run"
     args = _minimal_phase_neb_args(
@@ -322,7 +324,7 @@ def test_phase_neb_resume_within_max_iter_proceeds(tmp_path):
     _stage_image_dirs(work_dir, args.num_images)
     _write_history(work_dir / "convergence_history.csv", last_iteration=3)
 
-    with pytest.raises(NEBError, match="Cannot read energy/forces"):
+    with pytest.raises(NEBError, match="has no INCAR"):
         phase_neb(args)
 
 

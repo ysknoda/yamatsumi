@@ -150,3 +150,60 @@ def test_muller_brown_yamatsumi_converges_to_known_saddle(tmp_path):
 
     expected_saddle = -72.248940 / 20.0
     assert energies[ci_index] == pytest.approx(expected_saddle, abs=5e-2)
+
+
+# ---------------------------------------------------------------------------
+# --resume after a run was killed inside a VASP call
+# ---------------------------------------------------------------------------
+
+def _run_killed_mid_vasp(tmp_path, damage):
+    """
+    Converge nothing: run 3 iterations, then leave image 02 as a VASP call
+    killed part-way through would (OUTCAR deleted, or cut before the ionic
+    step finished). Returns (args, vasp_cmd).
+    """
+    vasp_cmd = f"{sys.executable} {MOCK_VASP} --pes doublewell"
+    args = _cli_args(
+        tmp_path, vasp_cmd, x0=-1.0, y0=0.0, x1=1.0, y1=0.0,
+        num_images=5, optimizer="fire", spring_const=5.0, step_size=0.05,
+        force_tol=0.05, max_iter=3,
+    )
+    phase_init(args)
+    _perturb_intermediate_y(Path(args.work_dir), args.num_images, vasp_cmd, delta_cart_y=0.3)
+    phase_neb(args)
+    outcar = get_image_dirs(Path(args.work_dir), args.num_images)[2] / "OUTCAR"
+    if damage == "missing":
+        outcar.unlink()
+    else:
+        text = outcar.read_text()
+        outcar.write_text(text[: text.index("LOOP+")])
+    args.resume, args.max_iter = True, 100
+    return args, vasp_cmd
+
+
+@pytest.mark.parametrize("damage", ["missing", "truncated"])
+def test_resume_reruns_an_image_whose_vasp_call_was_killed(tmp_path, damage):
+    args, _ = _run_killed_mid_vasp(tmp_path, damage)
+    phase_neb(args)
+    assert "TS criterion satisfied      : True" in (
+        Path(args.work_dir) / "yamatsumi_result.txt").read_text()
+
+
+def test_resume_reruns_only_the_damaged_image(tmp_path):
+    args, _ = _run_killed_mid_vasp(tmp_path, "missing")
+    image_dirs = get_image_dirs(Path(args.work_dir), args.num_images)
+    from yamatsumi.phases import neb_phase
+
+    rerun: list = []
+    real = neb_phase.run_vasp_for_images
+
+    def recording(dirs, *a, **kw):
+        rerun.append([d.name for d in dirs])
+        return real(dirs, *a, **kw)
+
+    args.max_iter = 4  # one more iteration after the repair
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(neb_phase, "run_vasp_for_images", recording)
+        phase_neb(args)
+    assert rerun[0] == [image_dirs[2].name]
+    assert rerun[1] == [d.name for d in image_dirs[1:-1]]

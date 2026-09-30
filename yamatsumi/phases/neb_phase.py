@@ -34,7 +34,11 @@ from ..errors import NEBError
 from ..kinetics import arrhenius_rate, compute_barriers
 from ..neb_forces import compute_neb_forces
 from ..optimizers import make_optimizer_states, update_all_images
-from ..outcar import parse_energy_from_outcar, parse_forces_from_outcar
+from ..outcar import (
+    parse_energy_from_outcar,
+    parse_forces_from_outcar,
+    scf_convergence_problem,
+)
 from ..phonon import verify_transition_state
 from ..plotting import plot_energy_profile, report_energy_profile
 from ..poscar import Poscar, read_poscar, write_poscar
@@ -259,6 +263,44 @@ def _update_and_run(
     return updated_poscars
 
 
+def _rerun_unfinished_images(
+    image_dirs : List[Path],
+    copy_dir   : Path,
+    args,
+    comm,
+    root       : bool,
+) -> None:
+    """
+    Re-run VASP, before a resumed loop starts, for every image whose OUTCAR
+    is missing or holds no finished, SCF-converged ionic step.
+
+    A run killed inside a VASP call leaves that image's OUTCAR deleted (by
+    prepare_image_directory) or cut short, while its POSCAR already holds
+    the geometry of the interrupted iteration. Re-running VASP on that
+    POSCAR is exactly the call that was lost; every other image is left
+    as it is.
+    """
+    unfinished = [
+        idir for idir in image_dirs
+        if scf_convergence_problem(idir / "OUTCAR") is not None
+    ]
+    if not unfinished:
+        return
+    _rlog(root, "  Re-running VASP for images left unfinished by the interruption: "
+                + ", ".join(idir.name for idir in unfinished))
+    # Every rank has just read these OUTCARs; none may delete one first.
+    parallel.barrier(comm)
+    rank = parallel.get_rank(comm)
+    size = parallel.get_size(comm)
+    for j in parallel.distribute_indices(len(unfinished), rank, size):
+        prepare_image_directory(unfinished[j], copy_dir)
+    run_vasp_for_images(
+        unfinished, args.vasp_cmd, comm=comm,
+        local_workers=args.local_workers, sanitize_mpi_env=args.sanitize_mpi_env,
+        vasp_timeout=args.vasp_timeout,
+    )
+
+
 def finalize(
     images     : List[Poscar],
     energies   : List[float],
@@ -447,6 +489,9 @@ def phase_neb(args) -> None:
                 "\n--max-iter must be at least 1."
             )
         )
+
+    if args.resume:
+        _rerun_unfinished_images(image_dirs, copy_dir, args, comm, root)
 
     opt_states = make_optimizer_states(n_inter, n_atoms, args)
     max_force  = float("inf")

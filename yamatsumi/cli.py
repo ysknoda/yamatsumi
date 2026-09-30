@@ -322,7 +322,9 @@ Notes
         help=(
             "Resume an interrupted --phase neb run.  "
             "Skips archiving convergence_history.csv and reuses existing "
-            "OUTCAR data from the last completed iteration."
+            "OUTCAR data from the last completed iteration. Images whose "
+            "OUTCAR is missing or unfinished (a run killed inside a VASP "
+            "call) are re-run on their current POSCAR first."
         ),
     )
     misc.add_argument(
