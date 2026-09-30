@@ -707,11 +707,15 @@ def vasp_running_in(directory: Path) -> list:
     return found
 
 
-def part_neb(work: Path, cmd: str, potcar_dir: Path) -> None:
+def part_neb(work: Path, cmd: str, potcar_dir: Path, approved_hours: float = 0.0) -> None:
     report = json.loads((work / "prep_report.json").read_text())
-    if not report.get("projection", {}).get("within_budget"):
+    projection = report.get("projection")
+    if projection is None:
+        raise SystemExit("neb: prep is unfinished")
+    if not projection["within_budget"] and projection["hours"] > approved_hours:
         raise SystemExit(
-            "neb: prep is unfinished or over budget; decide with the user first"
+            f"neb: projected {projection['hours']:.1f} h is over the {BUDGET_HOURS:.0f} h "
+            "budget; decide with the user and pass --approved-hours (ADR 0009)"
         )
     k, encut = report["selected"]["k"], report["selected"]["encut"]
     use_dipole = report["checks"]["dipole"]["use_dipole"]
@@ -939,6 +943,11 @@ def main() -> None:
         help="Directory holding H/POTCAR and Cu/POTCAR "
         "(default: $VASP_POTCAR_DIR from --env-script)",
     )
+    p.add_argument(
+        "--approved-hours", type=float, default=0.0,
+        help="NEB wall time the user approved beyond the 36 h budget "
+        "(default: 0, i.e. none); the NEB part refuses a longer projection",
+    )
     args = p.parse_args()
 
     work = Path(args.work_dir).resolve()
@@ -970,7 +979,7 @@ def main() -> None:
         if args.part == "prep":
             part_prep(work, cmd, potcar_dir)
             return
-        part_neb(work, cmd, potcar_dir)
+        part_neb(work, cmd, potcar_dir, args.approved_hours)
 
     report = evaluate(work)
     (work / "validation_report.json").write_text(json.dumps(report, indent=2))

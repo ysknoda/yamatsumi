@@ -115,3 +115,41 @@ check is now made against the all-electron value (still 0.01 Ang), and
 3.6347 Ang is used. The lattice difference to SBH17 does not bias B5: D
 is computed on our own slab and so absorbs it. From the strain dependence
 of Sakong and Gross it is worth about 0.01 eV.
+
+## Amendment 2 (2026-09-30): preparation results and the budget
+
+Preparation (VASP 6.6.1), all decided rules applied as written:
+
+| quantity | value |
+|---|---|
+| a0 | 3.6347 Ang (Amendment 1) |
+| H2 bond length | 0.7506 Ang |
+| d12 change of the 1x1 slab | -1.46 % (SBH17 PBE -0.26 %; data only, 4 layers) |
+
+Medium-algorithm barrier (SRP43 TS geometry minus H2 at 6 Ang), 2x2x4:
+
+| k-points | 350 eV | 450 eV |
+|---|---|---|
+| 6x6x1 | 0.5185 | 0.5320 |
+| 8x8x1 | 0.3960 | 0.4095 |
+| 11x11x1 | 0.4540 | 0.4676 |
+
+- Only the densest setting lies within 10 meV of itself, so 11x11x1 and
+  450 eV are used, and D = 0.4676 - 0.467 = +0.0006 eV. The cutoff shifts
+  every row by the same 13.5 meV; the k-points make the barrier oscillate
+  by up to 0.12 eV. Whether 11x11x1 is converged cannot be told from this
+  scan, since the rule picks the densest point by construction
+  (UNCERTAIN). B5 compares differences at the same setting, which absorbs
+  part of that error.
+- E(4 Ang) - E(6 Ang) = -5.39 meV, not below 5 meV: the NEB starts at 6 Ang.
+- Dipole correction: +1.37 meV on the barrier, below 5 meV: left out.
+- 3x3x4 (4x4x1) minus 2x2x4 (6x6x1) at 450 eV: -5.29 meV.
+- Largest |T*S|: 0.11 meV/atom.
+
+The NEB was projected at 72.4 h (52.1 s per SCF step, 100 iterations x
+5 images x 10 steps), twice the 36 h budget. Following decision 4 the run
+stopped, and the user accepted the 72 h projection (option (a); the
+alternatives were 3 images, the lighter 8x8x1 setting, or starting at
+4 Ang against the height rule). The NEB part now refuses to start over
+budget unless --approved-hours covers the projection. The user has put
+VASP runs on hold until further notice.
