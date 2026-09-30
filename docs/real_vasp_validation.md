@@ -127,9 +127,37 @@ kept as a regression fixture. The barrier of 1.30 eV is an upper bound for
 this cell, and has no physical meaning at one vacancy per 8 sites in any
 case.
 
-**Attempt 4: running.** The same endpoints; the intermediate images are
-displaced by a seeded random vector of at most 0.05 Ang before the first
-VASP call, which moves the migrating atom 0.01 to 0.03 Ang off the axis.
+**Attempt 4: PASS on all criteria.** The same endpoints; the intermediate
+images were displaced by a seeded random vector of at most 0.05 Ang before
+the first VASP call, which moved the migrating atom 0.01 to 0.03 Ang off
+the axis. 122 iterations, interrupted after 10 and finished with
+`--resume`. The machine slept for 3 h 44 min on an empty battery during
+iteration 85; VASP resumed and finished that image normally. Judged by
+`--evaluate-only` under the replaced A4 (the running driver still held the
+old script).
+
+| criterion | result | value |
+|---|---|---|
+| A1 converged | PASS | 0.0185 < 0.02 eV/Ang |
+| A2 all SCF converged | PASS | 8 OUTCARs |
+| A3 endpoints degenerate | PASS | 1e-5 meV |
+| A4 below the symmetric saddle | PASS | 1.1727 < 1.3013 eV |
+| A5 one imaginary, three zero | PASS | 1 imaginary (21.22 meV), 3 zero |
+| A6 alignment >= 0.9 | PASS | 0.9566 |
+| A7 resume | PASS | continuous numbering, A1-A6 met |
+| A8 |T*S| < 1 meV/atom | PASS | 0.14 meV/atom |
+
+Around iteration 61 the path passed within 0.036 eV/Ang of the symmetric
+saddle (+1.3008 eV), then left it along the unstable pair and settled
+0.13 eV lower. The TS lies 0.327 Ang off the hop axis and 0.074 Ang from
+the plane bisecting the bond (data only). So it is not on a C2 axis
+through the midpoint, which suggests the pair of inversion-related saddles
+with a minimum between them, case (ii) above. Four images cannot resolve
+that minimum; this is UNCERTAIN and not part of the software check.
+
+Zero modes at this TS: largest translational 0.097 meV, smallest real mode
+5.51 meV, imaginary mode 21.22 meV. The 1.0 meV default still separates
+them, with margins of about 10 and 5.5.
 
 ## Physics check on your own system: vacancy migration in a bulk FCC metal
 

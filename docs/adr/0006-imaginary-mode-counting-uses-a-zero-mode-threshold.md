@@ -52,3 +52,12 @@ That replacement is deferred: one system is not enough to set a default,
 and the H2/Cu(111) stage-(b) run (a metal slab with a light adsorbate)
 supplies the second data point. Until then the default stays at 1.0 meV,
 and the status stays "calibration pending".
+
+### Si7 attempt 4 (VASP 6.6.1, 2026-09-30)
+
+First-order saddle of the same hop off the symmetry axis: largest
+translational mode 0.097 meV, smallest real mode 5.51 meV, imaginary mode
+21.22 meV. The translational residual is 14 times that of attempt 3, and
+the smallest real mode half of it, so the margins of the 1.0 meV default
+shrank to about 10 below and 5.5 above. A defect TS did give larger
+residuals here, as first expected. The default stays at 1.0 meV.
