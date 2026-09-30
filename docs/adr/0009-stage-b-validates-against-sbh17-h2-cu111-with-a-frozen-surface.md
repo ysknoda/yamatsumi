@@ -89,3 +89,29 @@ and a geometric criterion built on an assumed saddle failed in Si7 (ADR
   single point was estimated at tens of hours on this machine.
 - Start H2 physisorbed near the surface. Rejected: PBE has no van der Waals
   term and gives at most a shallow well.
+
+## Amendment 1 (2026-09-30): the lattice constant
+
+Decision 2 said to use our PBE lattice constant if it lies within 0.01 Ang
+of SBH17's 3.624 Ang. It came out at 3.6347 Ang (third-order
+Birch-Murnaghan fit to E(a), 7 points, residuals below 0.02 meV), 0.0107
+Ang away, and the preparation stopped there. The value does not move with
+the settings:
+
+| variant | a0 (Ang) |
+|---|---|
+| 21^3 k-points, MP sigma 0.1, 450 eV, standard Cu | 3.6347 |
+| 29^3 k-points | 3.6354 |
+| sigma 0.05 | 3.6345 |
+| 600 eV | 3.6343 |
+| tetrahedron method, 29^3 | 3.6353 |
+| Cu_pv POTCAR | 3.6323 |
+
+SBH17's Table 3 also lists the all-electron PBE value of Haas, Tran and
+Blaha (Phys. Rev. B 79, 085104, 2009), 3.632 Ang, which ours matches to
+0.003 Ang. SBH17's own 3.624 Ang is the one that stands apart; why is
+UNCERTAIN. With the user's approval, after this result was known, the
+check is now made against the all-electron value (still 0.01 Ang), and
+3.6347 Ang is used. The lattice difference to SBH17 does not bias B5: D
+is computed on our own slab and so absorbs it. From the strain dependence
+of Sakong and Gross it is worth about 0.01 eV.

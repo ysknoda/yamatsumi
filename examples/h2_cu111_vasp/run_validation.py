@@ -72,6 +72,9 @@ from yamatsumi.vasp_runner import run_vasp_for_images
 SBH17_HIGH_EV = 0.478  # Table 5, PBE, high algorithm
 SBH17_MEDIUM_EV = 0.467  # Table 5, PBE, medium algorithm
 SBH17_A_PBE = 3.624  # Table 3, PBE Cu lattice constant (Ang)
+# Table 3 also lists the all-electron PBE value of Haas, Tran, Blaha,
+# Phys. Rev. B 79, 085104 (2009); the check is made against it (ADR 0009).
+HAAS_A_PBE = 3.632
 SRP_TS_R = 1.03  # Table 2, SRP43 TS: H-H distance (Ang)
 SRP_TS_Z = 1.16  # Table 2, SRP43 TS: height above the top layer (Ang)
 FAR_Z = 6.0  # Section III.2: molecule 6 Ang from the surface
@@ -85,7 +88,7 @@ SCAN_TOL_EV = 0.010  # lightest setting within 10 meV of the densest
 NEAR_Z = 4.0  # used for the NEB if within 5 meV of FAR_Z
 HEIGHT_TOL_EV = 0.005
 DIPOLE_TOL_EV = 0.005
-LATTICE_TOL = 0.01  # Ang, against SBH17_A_PBE
+LATTICE_TOL = 0.01  # Ang, against HAAS_A_PBE
 BUDGET_HOURS = 36.0
 PLANNED_ITERATIONS = 100  # for the time projection only
 NUM_IMAGES = 5
@@ -457,14 +460,18 @@ def part_prep(work: Path, cmd: str, potcar_dir: Path) -> None:
         a0=a0,
         sbh17_a0=SBH17_A_PBE,
         difference=a0 - SBH17_A_PBE,
+        all_electron_a0=HAAS_A_PBE,
+        difference_all_electron=a0 - HAAS_A_PBE,
     )
     save()
     log(
-        f"prep: a0 = {a0:.4f} Ang (SBH17 PBE {SBH17_A_PBE}; diff {a0 - SBH17_A_PBE:+.4f})"
+        f"prep: a0 = {a0:.4f} Ang (SBH17 PBE {SBH17_A_PBE}, diff {a0 - SBH17_A_PBE:+.4f}; "
+        f"all-electron {HAAS_A_PBE}, diff {a0 - HAAS_A_PBE:+.4f})"
     )
-    if abs(a0 - SBH17_A_PBE) > LATTICE_TOL:
+    if abs(a0 - HAAS_A_PBE) > LATTICE_TOL:
         raise SystemExit(
-            "prep: a0 differs from SBH17 by more than 0.01 Ang; stopping (ADR 0009)"
+            "prep: a0 differs from the all-electron PBE value by more than 0.01 Ang; "
+            "stopping (ADR 0009)"
         )
 
     # H2 bond length in a box.
