@@ -1,5 +1,5 @@
 ---
-status: accepted, calibration pending
+status: accepted
 ---
 
 # Imaginary modes are counted above a zero-mode threshold
@@ -61,3 +61,14 @@ translational mode 0.097 meV, smallest real mode 5.51 meV, imaginary mode
 the smallest real mode half of it, so the margins of the 1.0 meV default
 shrank to about 10 below and 5.5 above. A defect TS did give larger
 residuals here, as first expected. The default stays at 1.0 meV.
+
+### Decision (2026-09-30)
+
+The default stays at 1.0 meV and the calibration is closed on the two Si7
+data points. The stage-(b) H2/Cu(111) test was planned as a third point,
+but it freezes every Cu atom (ADR 0009), and a partial Hessian has no
+translational modes to calibrate against. Two points of different kinds
+(a near-minimum structure and a defect saddle) both left margins of at
+least 5 above and 10 below the threshold. Whether that holds for systems
+unlike these is UNCERTAIN; a full-Hessian run that breaks the margins
+reopens this ADR.
