@@ -153,3 +153,23 @@ alternatives were 3 images, the lighter 8x8x1 setting, or starting at
 4 Ang against the height rule). The NEB part now refuses to start over
 budget unless --approved-hours covers the projection. The user has put
 VASP runs on hold until further notice.
+
+## Amendment 3 (2026-10-02): the NEB step size
+
+The NEB started on 2026-10-02 01:03 with yamatsumi's default
+`--step-size` of 0.05 Ang. B7 worked as designed: the run was killed inside
+the VASP call of image 01 in iteration 11, and `--resume` re-ran images
+01-05 (all had lost their OUTCAR) and continued. But the path barely moved:
+after 10 iterations max|F| was still 4.5 eV/Ang, and no H atom was more
+than 0.07 Ang from the initial linear path, 0.05 Ang of which is the
+seeded perturbation. yamatsumi's FIRE caps the velocity at `--step-size`
+and moves velocity x dt, so with dt starting at 0.1 an image moves at most
+0.005-0.008 Ang per iteration until dt has grown. The images have to move
+1-2 Ang from a linear path through a stretched H2 in vacuum (+2.5 eV).
+
+VTST documents MAXMOVE, the role `--step-size` plays, as the maximum step
+for translation, default 0.2 Ang. With the user's approval the run was
+stopped at an iteration boundary and resumed from its current images with
+`--step-size 0.2`; nothing else changed. Whether VTST also caps the
+velocity, as yamatsumi does, is UNCERTAIN and is a separate question about
+the optimizer (ADR 0002), not part of this validation.
