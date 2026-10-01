@@ -707,7 +707,8 @@ def vasp_running_in(directory: Path) -> list:
     return found
 
 
-def part_neb(work: Path, cmd: str, potcar_dir: Path, approved_hours: float = 0.0) -> None:
+def part_neb(work: Path, cmd: str, potcar_dir: Path, approved_hours: float = 0.0,
+             step_size: float | None = None) -> None:
     report = json.loads((work / "prep_report.json").read_text())
     projection = report.get("projection")
     if projection is None:
@@ -773,6 +774,11 @@ def part_neb(work: Path, cmd: str, potcar_dir: Path, approved_hours: float = 0.0
         str(FORCE_TOL),
         "--no-show",
     ]
+    if step_size is not None:
+        # ADR 0009 Amendment 3: raised to the VTST MAXMOVE after iteration 11
+        # of the first run showed the 0.05 Ang default barely moving the path.
+        common += ["--step-size", str(step_size)]
+        log(f"neb: --step-size {step_size}")
     log_path = work / "yamatsumi.log"
     state_path = work / "neb_state.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
@@ -944,6 +950,10 @@ def main() -> None:
         "(default: $VASP_POTCAR_DIR from --env-script)",
     )
     p.add_argument(
+        "--step-size", type=float, default=None,
+        help="Passed to yamatsumi --step-size (default: yamatsumi's own default)",
+    )
+    p.add_argument(
         "--approved-hours", type=float, default=0.0,
         help="NEB wall time the user approved beyond the 36 h budget "
         "(default: 0, i.e. none); the NEB part refuses a longer projection",
@@ -979,7 +989,7 @@ def main() -> None:
         if args.part == "prep":
             part_prep(work, cmd, potcar_dir)
             return
-        part_neb(work, cmd, potcar_dir, args.approved_hours)
+        part_neb(work, cmd, potcar_dir, args.approved_hours, args.step_size)
 
     report = evaluate(work)
     (work / "validation_report.json").write_text(json.dumps(report, indent=2))
