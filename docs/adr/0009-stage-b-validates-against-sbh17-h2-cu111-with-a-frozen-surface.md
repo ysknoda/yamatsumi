@@ -189,3 +189,16 @@ residual H force 0.0018 eV/Ang, barrier 0.4719 eV against the target
 0.4786 eV. B3, B4, B5 pass. B1 fails because the path as a whole did not
 converge, and B7 fails with it, since it requires B1-B5. The criteria were
 not changed. Full table: docs/real_vasp_validation.md, "Stage (b) results".
+
+## Amendment 5 (2026-10-06): resumed with the corrected FIRE
+
+ADR 0002 amendment 2 removed the FIRE velocity cap. The gas-phase
+oscillation could not be reproduced on 2D analytic surfaces (a long
+plateau, a far start, DFT-like noise, a force-free direction, a 5 meV
+well), so there is no evidence yet that the change cures it. With the
+user's approval the NEB is resumed from its stopped state (iteration 126,
+`--step-size` 0.05) with the corrected FIRE, to see whether B1 can be met.
+B7 is not repeated: the kill inside VASP and the resume were exercised at
+iteration 11. B3-B5 already stand from the climbing-image check
+(Amendment 4); a converged run repeats them through yamatsumi's own
+phonon check.
