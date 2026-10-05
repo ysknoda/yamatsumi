@@ -9,6 +9,6 @@ by ``pip install``).
 from .errors import NEBError
 from .poscar import Poscar, read_poscar, write_poscar
 
-__version__ = "1.0.0a1"
+__version__ = "1.0.0a2"
 
 __all__ = ["NEBError", "Poscar", "read_poscar", "write_poscar", "__version__"]
