@@ -240,7 +240,6 @@ def _fire_kernel_plain(
     F_flat, v_flat,
     dt, alpha, n_pos,
     n_min, f_inc, f_dec, alpha0, f_alpha, dt_max,
-    step_size, n_atoms,
 ):
     """
     FIRE update (Bitzek et al., PRL 97, 170201 (2006)) for any image.
@@ -267,10 +266,8 @@ def _fire_kernel_plain(
 
     v_flat = v_flat + F_flat * dt
 
-    v_max = _max_atom_norm(v_flat, n_atoms)
-    if v_max > step_size:
-        v_flat = v_flat * (step_size / v_max)
-
+    # The velocity is not capped: --step-size bounds the move v*dt in
+    # step_fire, as the ASE FIRE (maxstep) and the VTST MAXMOVE do (ADR 0002).
     return v_flat, dt, alpha, n_pos
 
 
@@ -300,14 +297,12 @@ def step_fire(
         forces_flat, velocity_flat,
         state.dt, state.alpha, state.n_pos,
         state.n_min, state.f_inc, state.f_dec, state._alpha0, state.f_alpha, state.dt_max,
-        step_size, n,
     )
 
     # Mask before moving, so that no velocity carried over from an earlier
     # step can move a fixed degree of freedom.
     v_flat = apply_mask(v_flat.reshape(n, 3), mask).ravel()
-    # The kernels cap the velocity at step_size, which bounds the move only
-    # while dt <= 1; cap the move itself as well (ADR 0002).
+    # --step-size caps the move, not the velocity (ADR 0002, amendment 2).
     dx_flat, _ = _cap_displacement(v_flat * new_dt, step_size, n)
     new_cart_flat = cart_flat + dx_flat
 

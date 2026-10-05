@@ -9,6 +9,11 @@ That catches regressions in the code, but not problems that only a real
 DFT potential energy surface exposes. This document covers the end-to-end
 check against real VASP.
 
+> **Run one VASP job at a time.** Twice during stage (b) a VASP run ended
+> with exit code 1 and no message the moment another session started its
+> own `mpirun -np 4` on the same machine. Whether two concurrent Open MPI
+> runs interfere is UNCERTAIN, but the coincidence was exact both times.
+
 ## Stage (a): automated software validation on Si7
 
 `examples/si7_vacancy_vasp/run_validation.py` runs the whole pipeline on a

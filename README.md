@@ -90,6 +90,12 @@ one the path was actually aiming for, not just "some" saddle point.
 - A stale `OUTCAR`/`CONTCAR` left behind by a crashed or interrupted run is
   always removed before the directory is reused, so it can never be
   silently mistaken for a fresh result.
+- `--resume` re-runs VASP for any image whose `OUTCAR` is missing or holds
+  no finished, SCF-converged step, so a run killed inside a VASP call can be
+  continued.
+- Run one VASP job per machine at a time. On macOS with Open MPI 5, a run
+  twice ended with exit code 1 and no message exactly when another
+  `mpirun` started (see `docs/real_vasp_validation.md`).
 
 ## Try it without VASP
 

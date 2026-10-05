@@ -83,25 +83,30 @@ def test_step_quickmin_displacement_never_exceeds_step_size_for_small_force():
     assert disp == pytest.approx(1e-6, abs=1e-15)
 
 
-def test_step_fire_d4_caps_velocity_before_euler_step():
+def test_step_fire_caps_the_displacement_not_the_velocity():
     """
-    D-4 regression: the velocity cap must be applied BEFORE the Euler
-    displacement, so the capped (not the raw) velocity determines the
-    position update. With dt starting at 0.1, zero initial velocity, and a
-    large force, an uncapped-order bug would move the atom 10x further
-    than the correct capped-before behaviour.
+    ADR 0002 amendment 2: --step-size caps the per-atom move only, as the
+    ASE FIRE (maxstep on dt*v) and the VTST MAXMOVE do. It used to cap the
+    velocity as well, which held the move to step_size*dt (0.005 Ang at
+    dt = 0.1): on H2/Cu(111) the path moved under 0.01 Ang per iteration
+    against forces of 4.5 eV/Ang.
+
+    From rest the power test fails (P = 0): v = 0, dt -> 0.05, then
+    v = F*dt = 0.5 (no longer cut to 0.05) and the move is v*dt = 0.025.
     """
     p = _poscar([[0.0, 0.0, 0.0]])
     state = OptimizerState(n_atoms=1, dt0=0.1, alpha0=0.1, f_dec=0.5)
     forces = np.array([[10.0, 0.0, 0.0]])
     updated = step_fire(p, forces, state, step_size=0.05)
-
-    # P = F.v = 0 (v starts at 0) -> not > 0 -> v=0, dt *= f_dec -> 0.05
-    # v = 0 + F*dt = (10,0,0)*0.05 = (0.5,0,0); v_max=0.5 > step_size(0.05)
-    # -> capped v = (0.05,0,0); new_cart = 0 + v*dt = 0.05*0.05 = 0.0025
-    assert updated.positions[0, 0] == pytest.approx(0.0025, abs=1e-12)
+    assert updated.positions[0, 0] == pytest.approx(0.025, abs=1e-12)
     assert state.dt == pytest.approx(0.05, abs=1e-12)
-    assert np.allclose(state.velocity, [[0.05, 0.0, 0.0]], atol=1e-12)
+    assert np.allclose(state.velocity, [[0.5, 0.0, 0.0]], atol=1e-12)
+
+    # Second step, P > 0: v stays 0.5 after mixing, gains F*dt to 1.0, and
+    # the move v*dt = 0.05 is at the cap.
+    again = step_fire(updated, forces, state, step_size=0.04)
+    assert again.positions[0, 0] - updated.positions[0, 0] == pytest.approx(0.04, abs=1e-12)
+    assert np.allclose(state.velocity, [[1.0, 0.0, 0.0]], atol=1e-12)
 
 
 @pytest.mark.parametrize("stepper_name", ["sd", "quickmin", "fire"])
