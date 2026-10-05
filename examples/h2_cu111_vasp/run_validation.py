@@ -835,6 +835,75 @@ def part_neb(work: Path, cmd: str, potcar_dir: Path, approved_hours: float = 0.0
         log(f"neb: finished with exit code {rc}")
 
 
+def last_energy_profile(log_path: Path) -> list:
+    """Relative image energies (eV) of the last 'Energy profile' block in yamatsumi.log."""
+    lines = log_path.read_text(errors="replace").splitlines()
+    start = max(i for i, ln in enumerate(lines) if "Energy profile" in ln)
+    out = []
+    for ln in lines[start + 1:]:
+        m = re.search(r"\[(\d+)\]\s+([+-][\d.]+)", ln)
+        if not m:
+            break
+        out.append(float(m.group(2)))
+    return out
+
+
+def part_ts_phonon(work: Path, cmd: str) -> dict:
+    """
+    Phonon check of the climbing image alone (ADR 0009 Amendment 4), for a
+    run whose climbing image converged while the other images did not.
+
+    Uses the climbing image's current POSCAR and the CI-NEB tangent built
+    from the current image geometries and the last logged energies; the NEB
+    image directories are left untouched (the phonon runs in ts_phonon/).
+    """
+    from yamatsumi.neb_forces import compute_neb_forces
+    from yamatsumi.phonon import verify_transition_state
+
+    neb = work / "neb"
+    image_dirs = get_image_dirs(neb, NUM_IMAGES)
+    images = [read_poscar(str(d / "POSCAR")) for d in image_dirs]
+    rel = last_energy_profile(work / "yamatsumi.log")
+    if len(rel) != len(images):
+        raise SystemExit(f"ts-phonon: {len(rel)} logged energies for {len(images)} images")
+    ci = int(np.argmax(rel[1:-1])) + 1
+    zeros = [np.zeros((p.n_atoms, 3)) for p in images]
+    _, tangents = compute_neb_forces(images, zeros, rel, 5.0, ci)
+    target = work / "ts_phonon" / f"{ci:02d}"
+    target.mkdir(parents=True, exist_ok=True)
+    phonon = verify_transition_state(
+        images[ci], target, cmd, work / "CopyDir", tangent=tangents[ci - 1]
+    )
+    phonon_outcar = target / "phonon" / "OUTCAR"
+    text = phonon_outcar.read_text(errors="replace") if phonon_outcar.exists() else ""
+    # Forces on the free (H) atoms at the undisplaced reference geometry: the
+    # first TOTAL-FORCE block of the IBRION=5 run.
+    ref_force = None
+    blocks = text.split("TOTAL-FORCE (eV/Angst)")
+    if len(blocks) > 1:
+        rows = [ln.split() for ln in blocks[1].splitlines()[2:2 + images[ci].n_atoms]]
+        f = np.array([[float(x) for x in r[3:6]] for r in rows])
+        free = images[ci].selective_dynamics.all(axis=1)
+        ref_force = float(np.linalg.norm(f[free], axis=1).max())
+    prep = json.loads((work / "prep_report.json").read_text())
+    slab2 = supercell(read_poscar(str(work / "prep" / "slab_1x1" / "CONTCAR")), 2)
+    report = dict(
+        ci_image=ci,
+        barrier_eV=rel[ci],
+        target_eV=SBH17_HIGH_EV + prep["selected"]["D"],
+        reference_max_H_force=ref_force,
+        n_imaginary=phonon["n_imaginary"],
+        n_zero_modes=phonon["n_zero_modes"],
+        frequencies_meV=phonon["frequencies"],
+        eigenvector_tangent_alignment=phonon["eigenvector_tangent_alignment"],
+        phonon_failed=phonon["phonon_calculation_failed"],
+        ts_geometry=h_geometry(images[ci], slab2),
+    )
+    (work / "ts_phonon_report.json").write_text(json.dumps(report, indent=2))
+    log(f"ts-phonon: {report}")
+    return report
+
+
 def _result_fields(text: str) -> dict:
     fields = {}
     for line in text.splitlines():
@@ -924,7 +993,7 @@ def main() -> None:
     )
     p.add_argument(
         "--part",
-        choices=["prep", "neb", "evaluate"],
+        choices=["prep", "neb", "ts-phonon", "evaluate"],
         required=True,
         help="Which part to run (see above)",
     )
@@ -988,6 +1057,9 @@ def main() -> None:
         log(f"VASP command: {cmd}")
         if args.part == "prep":
             part_prep(work, cmd, potcar_dir)
+            return
+        if args.part == "ts-phonon":
+            part_ts_phonon(work, cmd)
             return
         part_neb(work, cmd, potcar_dir, args.approved_hours, args.step_size)
 
