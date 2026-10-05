@@ -159,6 +159,64 @@ Zero modes at this TS: largest translational 0.097 meV, smallest real mode
 5.51 meV, imaginary mode 21.22 meV. The 1.0 meV default still separates
 them, with margins of about 10 and 5.5.
 
+## Stage (b): H2 dissociation on Cu(111) against SBH17
+
+Design, reference data and every change made along the way:
+[ADR 0009](adr/0009-stage-b-validates-against-sbh17-h2-cu111-with-a-frozen-surface.md).
+Script: `examples/h2_cu111_vasp/run_validation.py`. In short: PBE, 2x2x4
+Cu(111) slab with every Cu atom fixed, only the six H coordinates move,
+H2 starting 6 Ang above a bridge site, 5 intermediate images, compared with
+the SBH17 PBE "high" barrier of 0.478 eV (J. Chem. Theory Comput. 2023, 19,
+245, Table 5). VASP 6.6.1, 11x11x1 k-points, 450 eV.
+
+### Stage (b) results
+
+The climbing image converged to a first-order saddle within 0.007 eV of the
+SBH17 value. The path as a whole did not converge: the images in the flat
+gas-phase part kept trading spring force between them, so B1 and, through
+it, B7 fail.
+
+| criterion | result | value |
+|---|---|---|
+| B1 NEB converged | **FAIL** | max\|F\| 0.157-0.215 eV/Ang over the last 5 of 125 iterations; the climbing image itself at 0.0019 eV/Ang |
+| B2 all SCF converged | PASS | every completed run reached EDIFF; the two interrupted runs are listed below |
+| B3 1 imaginary, 0 zero modes | PASS | 6-mode partial Hessian: one imaginary mode at 76.07 meV, no zero mode |
+| B4 alignment >= 0.9 | PASS | 0.9774 |
+| B5 \|E_NEB - (0.478 + D)\| <= 0.03 eV | PASS | 0.4719 eV against 0.4786 eV: -0.0067 eV |
+| B6 TS geometry (data) | - | bridge (0.015 Ang off), H2 parallel (0.5 deg), r = 0.981 Ang, Z = 1.210 Ang (SRP43: 1.03, 1.16) |
+| B7 resume after a kill inside VASP | **FAIL** | the kill and resume worked (iteration 11, image 01; numbering 1-125 continuous) but B1 is not met |
+| B8 \|T*S\| < 1 meV/atom | PASS | at most 0.14 meV/atom |
+
+How the run went:
+
+1. Iterations 1-17, `--step-size` 0.05 Ang (the default): the path barely
+   moved, at most 0.008 Ang per iteration (ADR 0009 Amendment 3).
+2. Iterations 18-106, 0.2 Ang (the VTST MAXMOVE): the path came down from
+   +2.5 eV to a climbing image at +0.4719 eV, steady to 2 meV from
+   iteration 68 on, while max\|F\| on the other images swung between 0.2
+   and 1.4 eV/Ang.
+3. Iterations 107-125, 0.05 Ang again: max\|F\| fell steadily from 0.455 to
+   0.157 eV/Ang at iteration 121, then rose again to 0.215, carried by
+   images 01 and 02 at 4-5 Ang above the surface, where the energy is flat
+   to a few meV and the tangent is poorly defined.
+4. With the user's approval the run was stopped after about 20 iterations
+   of step 3 and the climbing image was checked on its own
+   (`--part ts-phonon`). The residual force on the H atoms at its geometry
+   is 0.0018 eV/Ang.
+
+Interrupted VASP runs: one image killed at iteration 11 on purpose (B7);
+one at iteration 19 that ended with rc=1 and no message the moment another
+session started its own `mpirun -np 4` (the same thing happened once during
+the preparation; whether two concurrent Open MPI runs interfere is
+UNCERTAIN); and iteration 126, stopped on purpose for the phonon check.
+yamatsumi rejected the rc=1 run, and `--resume` re-ran every unfinished
+image each time.
+
+Open points: whether yamatsumi's FIRE should cap the velocity at
+`--step-size` as well as the move (ADR 0002), and how to bring the
+gas-phase images to rest (fewer images in the flat part, or a starting
+height of 4 Ang, which the 5 meV height rule ruled out).
+
 ## Physics check on your own system: vacancy migration in a bulk FCC metal
 
 A single vacancy hopping to a neighbouring lattice site (equivalently, the

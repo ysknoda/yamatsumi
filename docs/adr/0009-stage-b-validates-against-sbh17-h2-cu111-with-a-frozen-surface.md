@@ -173,3 +173,19 @@ stopped at an iteration boundary and resumed from its current images with
 `--step-size 0.2`; nothing else changed. Whether VTST also caps the
 velocity, as yamatsumi does, is UNCERTAIN and is a separate question about
 the optimizer (ADR 0002), not part of this validation.
+
+## Amendment 4 (2026-10-06): the climbing image checked on its own
+
+With `--step-size` 0.2 the climbing image settled at +0.4719 eV, but the
+other images kept oscillating (max\|F\| 0.2-1.4 eV/Ang). The user approved,
+first, resuming with 0.05 Ang for about 20 iterations and, if that did not
+settle the path, checking the climbing image alone. After 19 iterations
+max\|F\| had come down to 0.157 eV/Ang and risen again to 0.215, so the run
+was stopped and `--part ts-phonon` ran IBRION=5 on the climbing image, with
+the tangent rebuilt from the current images and the last logged energies.
+
+Result: one imaginary mode (76.07 meV), no zero mode, alignment 0.9774,
+residual H force 0.0018 eV/Ang, barrier 0.4719 eV against the target
+0.4786 eV. B3, B4, B5 pass. B1 fails because the path as a whole did not
+converge, and B7 fails with it, since it requires B1-B5. The criteria were
+not changed. Full table: docs/real_vasp_validation.md, "Stage (b) results".
