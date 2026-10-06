@@ -176,21 +176,23 @@ the SBH17 PBE "high" barrier of 0.478 eV (J. Chem. Theory Comput. 2023, 19,
 
 ### Stage (b) results
 
-The climbing image converged to a first-order saddle within 0.007 eV of the
-SBH17 value. The path as a whole did not converge: the images in the flat
-gas-phase part kept trading spring force between them, so B1 and, through
-it, B7 fail.
+**PASS on all criteria** (final, 2026-10-07), after the FIRE fix of ADR 0002
+amendment 2. An earlier verdict of this run, B1 and B7 failing because the
+gas-phase images never settled, is kept in the history below.
 
 | criterion | result | value |
 |---|---|---|
-| B1 NEB converged | **FAIL** | max\|F\| 0.157-0.215 eV/Ang over the last 5 of 125 iterations; the climbing image itself at 0.0019 eV/Ang |
-| B2 all SCF converged | PASS | every completed run reached EDIFF; the two interrupted runs are listed below |
-| B3 1 imaginary, 0 zero modes | PASS | 6-mode partial Hessian: one imaginary mode at 76.07 meV, no zero mode |
-| B4 alignment >= 0.9 | PASS | 0.9774 |
-| B5 \|E_NEB - (0.478 + D)\| <= 0.03 eV | PASS | 0.4719 eV against 0.4786 eV: -0.0067 eV |
-| B6 TS geometry (data) | - | bridge (0.015 Ang off), H2 parallel (0.5 deg), r = 0.981 Ang, Z = 1.210 Ang (SRP43: 1.03, 1.16) |
-| B7 resume after a kill inside VASP | **FAIL** | the kill and resume worked (iteration 11, image 01; numbering 1-125 continuous) but B1 is not met |
-| B8 \|T*S\| < 1 meV/atom | PASS | at most 0.14 meV/atom |
+| B1 NEB converged | PASS | max\|F\| 0.0199 eV/Ang at iteration 160 |
+| B2 all SCF converged | PASS | every completed run reached EDIFF |
+| B3 1 imaginary, 0 zero modes | PASS | 6-mode partial Hessian: one imaginary mode at 75.72 meV, no zero mode |
+| B4 alignment >= 0.9 | PASS | 0.9776 |
+| B5 \|E_NEB - (0.478 + D)\| <= 0.03 eV | PASS | 0.4718 eV against 0.4786 eV: -0.0068 eV |
+| B6 TS geometry (data) | - | bridge (0.014 Ang off), H2 parallel (0.5 deg), r = 0.980 Ang, Z = 1.211 Ang (SRP43: 1.03, 1.16) |
+| B7 resume after a kill inside VASP | PASS | killed at iteration 11 (image 01), resumed; numbering 1-160 continuous |
+| B8 \|T*S\| < 1 meV/atom | PASS | at most 0.38 meV/atom |
+
+The backward barrier is 0.4801 eV; the 2H final state lies 8 meV below
+the far H2.
 
 How the run went:
 
@@ -208,6 +210,13 @@ How the run went:
    of step 3 and the climbing image was checked on its own
    (`--part ts-phonon`). The residual force on the H atoms at its geometry
    is 0.0018 eV/Ang.
+   That check gave B3-B5 as above (76.07 meV, alignment 0.9774) with B1
+   and B7 failing.
+5. The FIRE velocity cap was then removed (ADR 0002 amendment 2) and the
+   run resumed at iteration 126 with 0.05 Ang. max\|F\| fell from 0.228 to
+   0.046 eV/Ang in 12 iterations, hovered at 0.05-0.065 for a few, and
+   reached 0.0199 at iteration 160. yamatsumi's own phonon check then
+   reproduced the climbing-image result.
 
 Interrupted VASP runs: one image killed at iteration 11 on purpose (B7);
 one at iteration 19 that ended with rc=1 and no message the moment another
@@ -217,10 +226,10 @@ UNCERTAIN); and iteration 126, stopped on purpose for the phonon check.
 yamatsumi rejected the rc=1 run, and `--resume` re-ran every unfinished
 image each time.
 
-Open points: whether yamatsumi's FIRE should cap the velocity at
-`--step-size` as well as the move (ADR 0002), and how to bring the
-gas-phase images to rest (fewer images in the flat part, or a starting
-height of 4 Ang, which the 5 meV height rule ruled out).
+Open point: the gas-phase oscillation was never reproduced on 2D analytic
+surfaces, so whether removing the velocity cap is what cured it, rather
+than the extra iterations or the FIRE state reset at the resume, is
+UNCERTAIN.
 
 ## Physics check on your own system: vacancy migration in a bulk FCC metal
 

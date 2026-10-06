@@ -202,3 +202,14 @@ B7 is not repeated: the kill inside VASP and the resume were exercised at
 iteration 11. B3-B5 already stand from the climbing-image check
 (Amendment 4); a converged run repeats them through yamatsumi's own
 phonon check.
+
+## Amendment 6 (2026-10-07): final result
+
+Resumed at iteration 126 with the corrected FIRE and `--step-size` 0.05,
+the NEB converged at iteration 160 (max\|F\| 0.0199 eV/Ang). yamatsumi's
+phonon check: one imaginary mode at 75.72 meV, no zero mode, alignment
+0.9776; barrier 0.4718 eV against the target 0.4786 eV. B1-B8 all pass;
+this replaces the partial verdict of Amendment 4. Whether the FIRE change
+itself cured the oscillation, rather than the extra iterations or the
+reset of the FIRE state at the resume, is UNCERTAIN: the oscillation was
+never reproduced on analytic surfaces.
