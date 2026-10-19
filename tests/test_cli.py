@@ -167,3 +167,12 @@ def test_main_runs_validation_before_any_phase():
     assert exc_info.value.code == 1
     mock_init.assert_not_called()
     mock_neb.assert_not_called()
+
+
+def test_version_flag_prints_the_package_version(capsys):
+    import yamatsumi
+
+    with pytest.raises(SystemExit) as exc:
+        build_parser().parse_args(["--version"])
+    assert exc.value.code == 0
+    assert capsys.readouterr().out.strip() == f"yamatsumi {yamatsumi.__version__}"

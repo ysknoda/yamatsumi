@@ -5,7 +5,7 @@ import argparse
 import logging
 import sys
 
-from . import parallel
+from . import __version__, parallel
 from .constants import (
     DEFAULT_ATTEMPT_FREQ_HZ,
     DEFAULT_CI_START_ITER,
@@ -115,6 +115,10 @@ Notes
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
+    p.add_argument(
+        "--version", action="version", version=f"yamatsumi {__version__}",
+        help="Print the yamatsumi version and exit",
+    )
     p.add_argument(
         "--phase", choices=["init", "neb", "all", "plot"], default="all",
         metavar="PHASE",
