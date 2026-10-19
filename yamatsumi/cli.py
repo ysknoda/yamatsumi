@@ -268,8 +268,9 @@ Notes
             "Phonon modes with |nu| at or below this value (meV) are counted as "
             "translational zero modes rather than imaginary modes. VASP prints "
             "the three translational modes of a periodic cell with arbitrary "
-            "sign. 0 restores a sign-only count. Provisional default, see "
-            f"docs/adr/0006  (default: {DEFAULT_ZERO_MODE_TOL_MEV})"
+            "sign. 0 restores a sign-only count. The default is calibrated on "
+            "real VASP output, see docs/adr/0006 "
+            f"(default: {DEFAULT_ZERO_MODE_TOL_MEV})"
         ),
     )
 
